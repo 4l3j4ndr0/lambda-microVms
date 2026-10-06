@@ -124,7 +124,11 @@ async function handleRequest(req, res) {
     target: targetFor(route),
     changeOrigin: true,
     secure: true,
-    headers: { Host: route.endpoint },
+    headers: {
+      Host: route.endpoint,
+      "X-aws-proxy-auth": token,
+      "X-aws-proxy-port": String(UPSTREAM_PORT),
+    },
   });
 }
 
@@ -166,7 +170,11 @@ server.on("upgrade", async (req, socket, head) => {
     target: targetFor(route),
     changeOrigin: true,
     secure: true,
-    headers: { Host: route.endpoint },
+    headers: {
+      Host: route.endpoint,
+      "X-aws-proxy-auth": token,
+      "X-aws-proxy-port": String(UPSTREAM_PORT),
+    },
   });
 });
 
