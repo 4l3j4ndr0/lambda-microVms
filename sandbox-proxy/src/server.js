@@ -14,6 +14,7 @@
 
 import http from "node:http";
 import https from "node:https";
+import tls from "node:tls";
 import { readFileSync } from "node:fs";
 import httpProxy from "http-proxy";
 
@@ -75,13 +76,6 @@ proxy.on("proxyReqWs", (proxyReq, req) => {
     proxyReq.setHeader("X-aws-proxy-port", String(UPSTREAM_PORT));
     proxyReq.setHeader("Host", r.endpoint);
   }
-  // DEBUG temporal: ver qué headers salen realmente en el upgrade WS.
-  log("ws_outgoing_headers", {
-    hasAuth: !!proxyReq.getHeader("X-aws-proxy-auth"),
-    host: proxyReq.getHeader("Host"),
-    port: proxyReq.getHeader("X-aws-proxy-port"),
-    path: proxyReq.path,
-  });
 });
 
 function targetFor(route) {
@@ -155,7 +149,11 @@ if (process.env.TLS_CERT && process.env.TLS_KEY) {
   log("tls_disabled_behind_nginx");
 }
 
-// Upgrade de WebSocket
+// Upgrade de WebSocket — implementación manual con tls.connect.
+// http-proxy pierde/corrompe headers largos (el token JWE ~812 chars) en el
+// handshake WS, causando 401 desde el endpoint. Aquí abrimos la conexión TLS al
+// endpoint nosotros mismos, reenviamos el handshake de upgrade con el token
+// inyectado, y hacemos pipe bidireccional de los sockets.
 server.on("upgrade", async (req, socket, head) => {
   const label = labelFromHost(req.headers.host);
   const route = resolveLabel(label);
@@ -171,18 +169,45 @@ server.on("upgrade", async (req, socket, head) => {
     socket.destroy();
     return;
   }
-  req._sandboxRoute = route;
-  req._sandboxToken = token;
-  proxy.ws(req, socket, head, {
-    target: targetFor(route),
-    changeOrigin: true,
-    secure: true,
-    headers: {
-      Host: route.endpoint,
-      "X-aws-proxy-auth": token,
-      "X-aws-proxy-port": String(UPSTREAM_PORT),
-    },
+
+  // Conexión TLS al endpoint de la MicroVM (HTTPS :443, SNI = endpoint).
+  const upstream = tls.connect(
+    { host: route.endpoint, port: 443, servername: route.endpoint },
+    () => {
+      // Reconstruir la request line + headers del cliente, pero con Host del
+      // endpoint y los headers de auth inyectados.
+      const headers = { ...req.headers };
+      delete headers["host"];
+      delete headers["x-aws-proxy-auth"];
+      delete headers["x-aws-proxy-port"];
+
+      let raw = `GET ${req.url} HTTP/1.1\r\n`;
+      raw += `Host: ${route.endpoint}\r\n`;
+      raw += `X-aws-proxy-auth: ${token}\r\n`;
+      raw += `X-aws-proxy-port: ${UPSTREAM_PORT}\r\n`;
+      for (const [k, v] of Object.entries(headers)) {
+        if (Array.isArray(v)) {
+          for (const vv of v) raw += `${k}: ${vv}\r\n`;
+        } else {
+          raw += `${k}: ${v}\r\n`;
+        }
+      }
+      raw += `\r\n`;
+      upstream.write(raw);
+      if (head && head.length) upstream.write(head);
+
+      // Pipe bidireccional: lo que venga del endpoint va al cliente y viceversa.
+      upstream.pipe(socket);
+      socket.pipe(upstream);
+      log("ws_proxied", { label });
+    }
+  );
+
+  upstream.on("error", (e) => {
+    log("ws_upstream_error", { label, error: String(e) });
+    socket.destroy();
   });
+  socket.on("error", () => upstream.destroy());
 });
 
 server.listen(PORT, () => {
