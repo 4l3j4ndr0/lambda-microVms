@@ -1,0 +1,36 @@
+name: Deploy Sandbox Proxy
+
+on:
+  push:
+    branches: [main]
+    paths: ["sandbox-proxy/**"]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::590183999298:role/ingenis-rentix-oidc-deploy-role
+          role-session-name: sandbox-proxy-deploy
+          aws-region: us-east-1
+
+      - name: Configure AWS profile
+        run: |
+          aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" --profile sso-personal
+          aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" --profile sso-personal
+          aws configure set aws_session_token "$AWS_SESSION_TOKEN" --profile sso-personal
+          aws configure set region us-east-1 --profile sso-personal
+
+      - name: Deploy sandbox-proxy
+        run: |
+          chmod +x sandbox-proxy/scripts/deploy.sh
+          bash sandbox-proxy/scripts/deploy.sh main
