@@ -193,24 +193,6 @@ server.on("upgrade", async (req, socket, head) => {
 
       const mergedProtocols = [...lmProtocols, ...clientProtocols].join(", ");
 
-      // DEBUG temporal: ver qué llega del cliente y qué enviamos al endpoint.
-      log("ws_debug_out", {
-        label,
-        url: req.url,
-        clientProtocols,
-        tokenLen: token ? token.length : 0,
-        tokenHead: token ? token.slice(0, 10) : null,
-        tokenTail: token ? token.slice(-10) : null,
-        mergedLen: mergedProtocols.length,
-        hasCookie: !!req.headers["cookie"],
-        cookieLen: (req.headers["cookie"] || "").length,
-        cookiePrefix: (req.headers["cookie"] || "").slice(0, 30),
-        upgrade: req.headers["upgrade"],
-        connection: req.headers["connection"],
-        origin: req.headers["origin"],
-        allHeaderKeys: Object.keys(req.headers).join(","),
-      });
-
       // Reconstruir el handshake con Host del endpoint. Mantenemos los demás
       // headers del cliente (incluida Cookie, clave para code-server).
       const headers = { ...req.headers };
@@ -218,6 +200,15 @@ server.on("upgrade", async (req, socket, head) => {
       delete headers["x-aws-proxy-auth"];
       delete headers["x-aws-proxy-port"];
       delete headers["sec-websocket-protocol"];
+
+      // --- CAUSA RAÍZ DEL 403 EN EL WS ---
+      // El proxy del endpoint valida el header Origin (anti-CSRF): sólo acepta
+      // el upgrade si Origin coincide con el hostname del endpoint (o está
+      // ausente). El navegador manda Origin = https://<label>.sandbox...,
+      // que NO coincide -> 403. Reescribimos Origin al host del endpoint.
+      if ("origin" in headers) {
+        headers["origin"] = `https://${route.endpoint}`;
+      }
 
       let raw = `GET ${req.url} HTTP/1.1\r\n`;
       raw += `Host: ${route.endpoint}\r\n`;
@@ -293,17 +284,6 @@ server.on("upgrade", async (req, socket, head) => {
 
         const status = statusLineText.split(" ")[1] || "?";
         log("ws_upstream_response", { label, status });
-
-        // DEBUG temporal: si no es 101, volcar los headers de respuesta y algo
-        // del cuerpo para entender el 403/401 del endpoint.
-        if (status !== "101") {
-          log("ws_upstream_reject", {
-            label,
-            status,
-            respHeaders: headerText.slice(0, 500),
-            bodyStart: rest.toString("utf8").slice(0, 300),
-          });
-        }
 
         const finalHead = [statusLineText, ...rewritten].join("\r\n") + "\r\n\r\n";
         socket.write(finalHead);
