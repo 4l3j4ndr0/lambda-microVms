@@ -5,17 +5,24 @@
 //   3. Genera un label aleatorio (subdominio) -> actualiza routes.json
 //   4. Envía email con la URL https://<label>.sandbox.awslearn.cloud vía SES
 //
-// Uso:
-//   node provision/provision.js --email ana@acme.com --name "Ana"
-//   node provision/provision.js --file participantes.json      (batch)
+// Uso (dentro del server, como contenedor efímero que comparte el dir data/):
+//   docker run --rm --env-file .env -e IMAGE_VERSION=4.0 \
+//     -v $(pwd)/data:/app/data sandbox-proxy \
+//     node provision/provision.js --email ana@acme.com --name "Ana"
+//
+//   # batch:
+//   ... node provision/provision.js --file participantes.json
 //
 // participantes.json: [ { "name": "Ana", "email": "ana@acme.com" }, ... ]
+//
+// IMPORTANTE: montar el DIRECTORIO data/ (no routes.json) para que el proxy vea
+// la ruta nueva al instante (el polling detecta el cambio sin reiniciar).
 //
 // NOTA: no incrusta secretos. El password de code-server por ahora es fijo en la
 // imagen (microvm2026); cuando se parametrice irá por runHookPayload, no aquí.
 
 import { randomBytes } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -60,7 +67,14 @@ function loadRoutes() {
 }
 
 function saveRoutes(routes) {
-  writeFileSync(ROUTES_FILE, JSON.stringify(routes, null, 2) + "\n");
+  // Escritura atómica: escribir a un temporal en el MISMO directorio y luego
+  // rename (operación atómica en el mismo filesystem). Evita que el proxy lea
+  // un JSON a medio escribir. El rename cambia el inode, pero como se monta el
+  // DIRECTORIO data/ (no el archivo), el proxy ve el archivo nuevo y el polling
+  // por mtime lo recarga.
+  const tmp = ROUTES_FILE + ".tmp";
+  writeFileSync(tmp, JSON.stringify(routes, null, 2) + "\n");
+  renameSync(tmp, ROUTES_FILE);
 }
 
 async function runMicrovm() {

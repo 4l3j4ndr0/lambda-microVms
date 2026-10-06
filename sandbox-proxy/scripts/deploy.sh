@@ -13,7 +13,9 @@ set -euo pipefail
 #     (el proxy genera/renueva tokens usando el rol, NO claves en disco).
 #   - El archivo .env ya presente en ${APP_DIR}/source/sandbox-proxy/.env
 #     (NO se versiona; se coloca manualmente — ver .env.example).
-#   - routes.json se monta como volumen (lo escribe provision.js; no se versiona).
+#   - El directorio data/ (con routes.json) se monta como volumen; lo escribe
+#     provision.js y lo lee el proxy. Se monta el DIRECTORIO, no el archivo,
+#     para que las reescrituras (que cambian el inode) se reflejen sin reiniciar.
 #
 # Requisitos previos LOCALES:
 #   - AWS CLI configurado con el perfil indicado.
@@ -38,7 +40,7 @@ cat > "$PARAMS_FILE" <<EOF
   "commands": [
     "#!/bin/bash",
     "set -e",
-    "mkdir -p ${APP_DIR} && cd ${APP_DIR} && (if [ -d source ]; then cd source && git fetch origin && git reset --hard origin/${BRANCH}; else git clone -b ${BRANCH} ${REPO} source; fi) && cd ${APP_DIR}/source/sandbox-proxy && if [ ! -f .env ]; then echo MISSING_ENV && exit 1; fi && touch routes.json && docker rm -f ${CONTAINER_NAME} 2>/dev/null || true && docker build --no-cache -t ${IMAGE_TAG} . && docker run -d --name ${CONTAINER_NAME} --restart unless-stopped --env-file .env -v \$(pwd)/routes.json:/app/routes.json -p 127.0.0.1:${PORT}:${PORT} ${IMAGE_TAG} && echo DEPLOY_SUCCESS"
+    "mkdir -p ${APP_DIR} && cd ${APP_DIR} && (if [ -d source ]; then cd source && git fetch origin && git reset --hard origin/${BRANCH}; else git clone -b ${BRANCH} ${REPO} source; fi) && cd ${APP_DIR}/source/sandbox-proxy && if [ ! -f .env ]; then echo MISSING_ENV && exit 1; fi && mkdir -p data && [ -f data/routes.json ] || echo '{}' > data/routes.json && docker rm -f ${CONTAINER_NAME} 2>/dev/null || true && docker build --no-cache -t ${IMAGE_TAG} . && docker run -d --name ${CONTAINER_NAME} --restart unless-stopped --env-file .env -v \$(pwd)/data:/app/data -p 127.0.0.1:${PORT}:${PORT} ${IMAGE_TAG} && echo DEPLOY_SUCCESS"
   ]
 }
 EOF

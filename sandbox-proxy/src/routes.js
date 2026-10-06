@@ -15,7 +15,6 @@ const ROUTES_FILE = process.env.ROUTES_FILE
 const POLL_INTERVAL_MS = Number(process.env.ROUTES_POLL_MS || 3000);
 
 let routes = {};
-let lastMtimeMs = 0;
 
 function log(event, extra = {}) {
   console.log(JSON.stringify({ ts: Date.now(), src: "routes", event, ...extra }));
@@ -39,26 +38,31 @@ function loadSync(reason = "initial") {
   }
 }
 
-// Carga inicial
-try {
-  lastMtimeMs = statSync(ROUTES_FILE).mtimeMs;
-} catch {
-  lastMtimeMs = 0;
+// Firma del archivo para detectar cambios: mtime + inode + tamaño. Combinar los
+// tres es robusto tanto si provision.js reescribe in-place (mismo inode) como si
+// hace rename atómico (inode nuevo), y aunque el mtime tenga baja resolución.
+function fileSig() {
+  try {
+    const s = statSync(ROUTES_FILE);
+    return `${s.mtimeMs}:${s.ino}:${s.size}`;
+  } catch (e) {
+    if (e.code === "ENOENT") return "absent";
+    log("poll_stat_error", { error: String(e) });
+    return null; // error transitorio: no cambiar lastSig
+  }
 }
+
+let lastSig = fileSig();
 loadSync("initial");
 
-// Polling: relee solo si el mtime cambió. Confiable sobre bind mounts de Docker
-// (fs.watch no dispara con reescrituras desde otro contenedor).
+// Polling: relee cuando la firma del archivo cambia. Confiable sobre bind mounts
+// de Docker (fs.watch no dispara con reescrituras desde otro contenedor) y ante
+// el rename atómico que usa provision.js.
 const pollTimer = setInterval(() => {
-  let mtime;
-  try {
-    mtime = statSync(ROUTES_FILE).mtimeMs;
-  } catch (e) {
-    if (e.code !== "ENOENT") log("poll_stat_error", { error: String(e) });
-    return;
-  }
-  if (mtime !== lastMtimeMs) {
-    lastMtimeMs = mtime;
+  const sig = fileSig();
+  if (sig === null) return; // error transitorio
+  if (sig !== lastSig) {
+    lastSig = sig;
     loadSync("poll");
   }
 }, POLL_INTERVAL_MS);
