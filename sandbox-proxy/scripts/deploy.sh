@@ -38,7 +38,7 @@ cat > "$PARAMS_FILE" <<EOF
   "commands": [
     "#!/bin/bash",
     "set -e",
-    "mkdir -p ${APP_DIR} && cd ${APP_DIR} && (if [ -d source ]; then cd source && git fetch origin && git reset --hard origin/${BRANCH}; else git clone -b ${BRANCH} ${REPO} source; fi) && cd ${APP_DIR}/source/sandbox-proxy && if [ ! -f .env ]; then echo MISSING_ENV && exit 1; fi && touch routes.json && docker stop ${CONTAINER_NAME} 2>/dev/null && docker rm ${CONTAINER_NAME} 2>/dev/null || true && docker build --no-cache -t ${IMAGE_TAG} . && docker run -d --name ${CONTAINER_NAME} --restart unless-stopped --env-file .env -v \$(pwd)/routes.json:/app/routes.json -p 127.0.0.1:${PORT}:${PORT} ${IMAGE_TAG} && echo DEPLOY_SUCCESS"
+    "mkdir -p ${APP_DIR} && cd ${APP_DIR} && (if [ -d source ]; then cd source && git fetch origin && git reset --hard origin/${BRANCH}; else git clone -b ${BRANCH} ${REPO} source; fi) && cd ${APP_DIR}/source/sandbox-proxy && if [ ! -f .env ]; then echo MISSING_ENV && exit 1; fi && touch routes.json && docker rm -f ${CONTAINER_NAME} 2>/dev/null || true && docker build --no-cache -t ${IMAGE_TAG} . && docker run -d --name ${CONTAINER_NAME} --restart unless-stopped --env-file .env -v \$(pwd)/routes.json:/app/routes.json -p 127.0.0.1:${PORT}:${PORT} ${IMAGE_TAG} && echo DEPLOY_SUCCESS"
   ]
 }
 EOF

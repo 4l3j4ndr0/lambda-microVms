@@ -75,6 +75,13 @@ proxy.on("proxyReqWs", (proxyReq, req) => {
     proxyReq.setHeader("X-aws-proxy-port", String(UPSTREAM_PORT));
     proxyReq.setHeader("Host", r.endpoint);
   }
+  // DEBUG temporal: ver qué headers salen realmente en el upgrade WS.
+  log("ws_outgoing_headers", {
+    hasAuth: !!proxyReq.getHeader("X-aws-proxy-auth"),
+    host: proxyReq.getHeader("Host"),
+    port: proxyReq.getHeader("X-aws-proxy-port"),
+    path: proxyReq.path,
+  });
 });
 
 function targetFor(route) {
