@@ -19,7 +19,7 @@ jobs:
       - name: Configure AWS credentials OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::590183999298:role/ingenis-rentix-oidc-deploy-role
+          role-to-assume: arn:aws:iam::590183999298:role/ingenis-sandbox-oidc-deploy-role
           role-session-name: sandbox-proxy-deploy
           aws-region: us-east-1
 
