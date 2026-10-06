@@ -199,10 +199,16 @@ server.on("upgrade", async (req, socket, head) => {
         url: req.url,
         clientProtocols,
         tokenLen: token ? token.length : 0,
+        tokenHead: token ? token.slice(0, 10) : null,
+        tokenTail: token ? token.slice(-10) : null,
         mergedLen: mergedProtocols.length,
         hasCookie: !!req.headers["cookie"],
+        cookieLen: (req.headers["cookie"] || "").length,
+        cookiePrefix: (req.headers["cookie"] || "").slice(0, 30),
         upgrade: req.headers["upgrade"],
         connection: req.headers["connection"],
+        origin: req.headers["origin"],
+        allHeaderKeys: Object.keys(req.headers).join(","),
       });
 
       // Reconstruir el handshake con Host del endpoint. Mantenemos los demás
