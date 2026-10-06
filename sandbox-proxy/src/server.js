@@ -79,7 +79,16 @@ proxy.on("proxyReqWs", (proxyReq, req) => {
 
 function targetFor(route) {
   // El endpoint de la MicroVM habla HTTPS en 443.
-  return `https://${route.endpoint}:443`;
+  // Pasamos el target como objeto para fijar `servername` (SNI del handshake TLS).
+  // http-proxy copia host/hostname/servername del target al request saliente;
+  // sin servername, el TLS al endpoint falla y el WebSocket cierra con 1006.
+  return {
+    protocol: "https:",
+    host: route.endpoint,
+    hostname: route.endpoint,
+    port: 443,
+    servername: route.endpoint,
+  };
 }
 
 async function handleRequest(req, res) {
@@ -113,6 +122,8 @@ async function handleRequest(req, res) {
   req._sandboxToken = token;
   proxy.web(req, res, {
     target: targetFor(route),
+    changeOrigin: true,
+    secure: true,
     headers: { Host: route.endpoint },
   });
 }
@@ -151,7 +162,12 @@ server.on("upgrade", async (req, socket, head) => {
   }
   req._sandboxRoute = route;
   req._sandboxToken = token;
-  proxy.ws(req, socket, head, { target: targetFor(route) });
+  proxy.ws(req, socket, head, {
+    target: targetFor(route),
+    changeOrigin: true,
+    secure: true,
+    headers: { Host: route.endpoint },
+  });
 });
 
 server.listen(PORT, () => {
