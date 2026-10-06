@@ -3,25 +3,32 @@
 // recarga en caliente cuando el archivo cambia (el provisioner lo reescribe al
 // crear/terminar sandboxes, sin reiniciar el proxy).
 
-import { readFile, watch } from "node:fs";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 const ROUTES_FILE = process.env.ROUTES_FILE
   ? path.resolve(process.env.ROUTES_FILE)
   : path.resolve(process.cwd(), "routes.json");
 
+// Intervalo de polling del archivo (ms). Robusto con bind mounts de Docker,
+// donde fs.watch no detecta cambios de forma confiable.
+const POLL_INTERVAL_MS = Number(process.env.ROUTES_POLL_MS || 3000);
+
 let routes = {};
+let lastMtimeMs = 0;
 
 function log(event, extra = {}) {
   console.log(JSON.stringify({ ts: Date.now(), src: "routes", event, ...extra }));
 }
 
-function loadSync() {
+function loadSync(reason = "initial") {
   try {
     const raw = readFileSync(ROUTES_FILE, "utf8");
     routes = JSON.parse(raw || "{}");
-    log("loaded", { count: Object.keys(routes).length, file: ROUTES_FILE });
+    log(reason === "initial" ? "loaded" : "reloaded", {
+      count: Object.keys(routes).length,
+      file: ROUTES_FILE,
+    });
   } catch (e) {
     if (e.code === "ENOENT") {
       routes = {};
@@ -33,29 +40,29 @@ function loadSync() {
 }
 
 // Carga inicial
-loadSync();
-
-// Recarga en caliente ante cambios del archivo (debounced).
-let reloadTimer = null;
 try {
-  watch(ROUTES_FILE, () => {
-    if (reloadTimer) clearTimeout(reloadTimer);
-    reloadTimer = setTimeout(() => {
-      readFile(ROUTES_FILE, "utf8", (err, raw) => {
-        if (err) return log("reload_error", { error: String(err) });
-        try {
-          routes = JSON.parse(raw || "{}");
-          log("reloaded", { count: Object.keys(routes).length });
-        } catch (e) {
-          log("reload_parse_error", { error: String(e) });
-        }
-      });
-    }, 300);
-  });
-} catch (e) {
-  // watch puede fallar si el archivo aún no existe; no es fatal.
-  log("watch_unavailable", { error: String(e) });
+  lastMtimeMs = statSync(ROUTES_FILE).mtimeMs;
+} catch {
+  lastMtimeMs = 0;
 }
+loadSync("initial");
+
+// Polling: relee solo si el mtime cambió. Confiable sobre bind mounts de Docker
+// (fs.watch no dispara con reescrituras desde otro contenedor).
+const pollTimer = setInterval(() => {
+  let mtime;
+  try {
+    mtime = statSync(ROUTES_FILE).mtimeMs;
+  } catch (e) {
+    if (e.code !== "ENOENT") log("poll_stat_error", { error: String(e) });
+    return;
+  }
+  if (mtime !== lastMtimeMs) {
+    lastMtimeMs = mtime;
+    loadSync("poll");
+  }
+}, POLL_INTERVAL_MS);
+if (pollTimer.unref) pollTimer.unref();
 
 /** Devuelve la ruta para un label de subdominio, o null. */
 export function resolveLabel(label) {
