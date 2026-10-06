@@ -1,0 +1,22 @@
+# Dependencias
+**/node_modules/
+
+# Env y secretos (nunca commitear el .env real)
+**/.env
+.env
+
+# Estado runtime del proxy (se genera por provision.js)
+sandbox-proxy/routes.json
+
+# Certificados TLS
+**/certs/
+
+# Basura del SO
+.DS_Store
+**/.DS_Store
+
+# Logs
+*.log
+
+# Export de sesión de Kiro (no es código; 1.7MB de historial de conversación)
+demo-microVms/microvms.json

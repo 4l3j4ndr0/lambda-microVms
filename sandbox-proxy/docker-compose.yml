@@ -1,0 +1,21 @@
+services:
+  sandbox-proxy:
+    build: .
+    container_name: sandbox-proxy
+    restart: unless-stopped
+    # Solo expone en localhost del host: nginx hace el passthrough hacia aquí.
+    ports:
+      - "127.0.0.1:8443:8443"
+    # Config desde .env (copiar de .env.example). Las credenciales AWS NO van
+    # aquí: en EC2 se usa el rol de la instancia (ingenis-server-role).
+    env_file:
+      - .env
+    volumes:
+      # routes.json compartido con el provisioner (lo reescribe al crear sandboxes)
+      - ./routes.json:/app/routes.json
+    # logs estructurados JSON a stdout -> docker logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

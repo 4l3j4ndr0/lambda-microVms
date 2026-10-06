@@ -1,0 +1,59 @@
+{
+  "name": "lambda-microvms",
+  "description": "Agent para desarrollar, desplegar y operar aplicaciones sobre AWS Lambda MicroVMs",
+  "prompt": "You are an expert in AWS Lambda MicroVMs — Firecracker-isolated, snapshot-resumable serverless compute. Help the user build, deploy, debug, and operate microVM workloads. Always follow the conventions in the steering files and reference the skill documentation for accurate API details.",
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "read",
+    "grep",
+    "glob"
+  ],
+  "toolsSettings": {
+    "shell": {
+      "allowedCommands": [
+        "aws lambda-microvms.*",
+        "aws s3 cp.*",
+        "aws s3 ls.*",
+        "aws iam.*",
+        "docker build.*",
+        "docker run.*",
+        "zip.*",
+        "cat.*",
+        "ls.*"
+      ],
+      "autoAllowReadonly": true
+    }
+  },
+  "resources": [
+    "skill://.kiro/skills/**/SKILL.md",
+    "file://.kiro/steering/**/*.md"
+  ],
+  "permissions": {
+    "rules": [
+      {
+        "capability": "shell",
+        "match": [
+          "aws lambda-microvms*",
+          "aws s3 cp*",
+          "aws s3 ls*",
+          "aws iam*",
+          "docker build*",
+          "docker run*",
+          "zip*",
+          "cat*",
+          "ls*"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      }
+    ],
+    "policies": [
+      "read-only-shell"
+    ]
+  }
+}
