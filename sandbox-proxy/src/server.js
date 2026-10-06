@@ -196,10 +196,20 @@ server.on("upgrade", async (req, socket, head) => {
       upstream.write(raw);
       if (head && head.length) upstream.write(head);
 
+      // DEBUG: capturar la primera línea de la respuesta del endpoint.
+      let sniffed = false;
+      upstream.once("data", (chunk) => {
+        if (!sniffed) {
+          sniffed = true;
+          const firstLine = chunk.toString("utf8").split("\r\n")[0];
+          log("ws_upstream_response", { label, firstLine });
+        }
+      });
+
       // Pipe bidireccional: lo que venga del endpoint va al cliente y viceversa.
       upstream.pipe(socket);
       socket.pipe(upstream);
-      log("ws_proxied", { label });
+      log("ws_proxied", { label, tokenLen: token ? token.length : 0, url: req.url });
     }
   );
 
