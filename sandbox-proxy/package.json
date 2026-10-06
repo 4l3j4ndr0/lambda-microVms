@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@aws-sdk/client-lambda-microvms": "^3.1146.0",
-    "@aws-sdk/client-sesv2": "^3.1146.0",
-    "http-proxy": "^1.18.1"
+    "@aws-sdk/client-sesv2": "^3.1146.0"
   }
 }

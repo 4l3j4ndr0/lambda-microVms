@@ -14,7 +14,9 @@ import {
 } from "@aws-sdk/client-lambda-microvms";
 
 const REGION = process.env.AWS_REGION || "us-east-1";
-const TOKEN_TTL_MIN = Number(process.env.TOKEN_TTL_MIN || 60); // máx permitido
+// Steering: TTL mínimo necesario, nunca 60 min por defecto. 30 min basta y el
+// background refresh (REFRESH_MARGIN_MS antes de expirar) mantiene continuidad.
+const TOKEN_TTL_MIN = Number(process.env.TOKEN_TTL_MIN || 30);
 const REFRESH_MARGIN_MS = Number(process.env.REFRESH_MARGIN_MS || 10 * 60 * 1000); // renovar 10 min antes
 const ALLOWED_PORT = Number(process.env.SANDBOX_PORT || 8080); // code-server
 

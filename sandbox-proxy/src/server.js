@@ -2,21 +2,36 @@
 // Proxy Node.js para los sandboxes de Lambda MicroVMs.
 //
 // Flujo por request:
-//   1. Lee el Host -> extrae el label del subdominio (sa7s6a7.sandbox.awslearn.cloud -> "sa7s6a7")
+//   1. Lee el Host -> extrae el label del subdominio
+//      (sa7s6a7.sandbox.awslearn.cloud -> "sa7s6a7")
 //   2. Busca el label en routes.json -> { microvmId, endpoint }
-//   3. Obtiene un token vigente para ese microvmId (tokenManager, renovado en bg)
-//   4. Reenvía la petición al endpoint de la MicroVM por HTTPS inyectando:
-//        X-aws-proxy-auth: <token>   X-aws-proxy-port: 8080   Host: <endpoint>
-//   5. Soporta upgrade de WebSocket (code-server lo necesita)
+//   3. Obtiene un token vigente para ese microvmId (tokenManager, bg refresh)
+//   4. Reenvía la petición al endpoint de la MicroVM por HTTPS.
+//   5. Reescribe el Set-Cookie del upstream (quita Domain) para que el navegador
+//      asocie la cookie de sesión al dominio del sandbox, no al endpoint crudo.
+//   6. Soporta upgrade de WebSocket inyectando auth/puerto como subprotocolos.
 //
-// TLS: por defecto el proxy escucha HTTP en localhost y nginx hace el passthrough
-// SNI + TLS. Si se definen TLS_CERT y TLS_KEY, el proxy termina TLS él mismo.
+// --- CAUSA RAÍZ DEL "WebSocket close 1006" (resuelta aquí) ---
+// code-server emite Set-Cookie con Domain = <endpoint>.lambda-microvm.on.aws
+// (lo deriva del Host que le mandamos). El navegador, que está en
+// <label>.sandbox.awslearn.cloud, DESCARTA esa cookie por dominio no
+// coincidente. Sin cookie, el upgrade WS del workbench llega sin sesión y
+// code-server responde 401 -> el cliente cierra con 1006.
+// Fix: reescribir Set-Cookie eliminando el atributo Domain (cookie host-only).
+//
+// --- AUTENTICACIÓN WS ---
+// En un upgrade WebSocket el endpoint NO lee X-aws-proxy-auth/-port; la
+// metadata del proxy viaja como SUBPROTOCOLOS en Sec-WebSocket-Protocol:
+//   lambda-microvms.authentication.<token>, lambda-microvms, lambda-microvms.port.<n>
+// El endpoint los consume y los elimina antes de reenviar a la app.
+//
+// TLS: por defecto el proxy escucha HTTP en localhost y nginx hace el
+// passthrough SNI + TLS. Si se definen TLS_CERT y TLS_KEY, el proxy termina TLS.
 
 import http from "node:http";
 import https from "node:https";
 import tls from "node:tls";
 import { readFileSync } from "node:fs";
-import httpProxy from "http-proxy";
 
 import { resolveLabel, allLabels } from "./routes.js";
 import { ensureToken, getCachedToken } from "./tokenManager.js";
@@ -41,57 +56,39 @@ function labelFromHost(hostHeader) {
   return label;
 }
 
-const proxy = httpProxy.createProxyServer({
-  changeOrigin: true,
-  secure: true,
-  xfwd: true,
-  ws: true,
-});
-
-proxy.on("error", (err, req, res) => {
-  log("proxy_error", { error: String(err), url: req?.url });
-  if (res && !res.headersSent && res.writeHead) {
-    res.writeHead(502, { "Content-Type": "text/plain" });
-    res.end("Sandbox proxy error\n");
-  } else if (res && res.destroy) {
-    res.destroy();
-  }
-});
-
-// Inyecta los headers de auth justo antes de enviar al upstream.
-proxy.on("proxyReq", (proxyReq, req) => {
-  const r = req._sandboxRoute;
-  const token = req._sandboxToken;
-  if (r && token) {
-    proxyReq.setHeader("X-aws-proxy-auth", token);
-    proxyReq.setHeader("X-aws-proxy-port", String(UPSTREAM_PORT));
-    proxyReq.setHeader("Host", r.endpoint);
-  }
-});
-proxy.on("proxyReqWs", (proxyReq, req) => {
-  const r = req._sandboxRoute;
-  const token = req._sandboxToken;
-  if (r && token) {
-    proxyReq.setHeader("X-aws-proxy-auth", token);
-    proxyReq.setHeader("X-aws-proxy-port", String(UPSTREAM_PORT));
-    proxyReq.setHeader("Host", r.endpoint);
-  }
-});
-
-function targetFor(route) {
-  // El endpoint de la MicroVM habla HTTPS en 443.
-  // Pasamos el target como objeto para fijar `servername` (SNI del handshake TLS).
-  // http-proxy copia host/hostname/servername del target al request saliente;
-  // sin servername, el TLS al endpoint falla y el WebSocket cierra con 1006.
-  return {
-    protocol: "https:",
-    host: route.endpoint,
-    hostname: route.endpoint,
-    port: 443,
-    servername: route.endpoint,
-  };
+// Reescribe los valores de Set-Cookie que vienen del upstream:
+//   - Elimina el atributo "Domain=..." -> la cookie queda host-only y el
+//     navegador la asocia al dominio del sandbox (<label>.sandbox.awslearn.cloud).
+//   - Garantiza "Secure" (vamos sobre HTTPS de cara al navegador).
+function rewriteSetCookie(value) {
+  const parts = value.split(";").map((p) => p.trim());
+  const kept = parts.filter((p) => !/^domain=/i.test(p));
+  if (!kept.some((p) => /^secure$/i.test(p))) kept.push("Secure");
+  return kept.join("; ");
 }
 
+async function resolveRouteAndToken(req, onError) {
+  const label = labelFromHost(req.headers.host);
+  const route = resolveLabel(label);
+  if (!route) {
+    onError(404, "Sandbox no encontrado\n");
+    log("route_not_found", { host: req.headers.host, label });
+    return null;
+  }
+  let token;
+  try {
+    token = getCachedToken(route.microvmId) || (await ensureToken(route.microvmId));
+  } catch (e) {
+    onError(503, "No se pudo autenticar con el sandbox\n");
+    log("token_error", { label, microvmId: route.microvmId, error: String(e) });
+    return null;
+  }
+  return { label, route, token };
+}
+
+// --- Proxy HTTP manual (https.request) ---
+// Lo hacemos manual (en vez de http-proxy) para poder interceptar y reescribir
+// los headers de respuesta del upstream, en particular Set-Cookie.
 async function handleRequest(req, res) {
   // Healthcheck simple
   if (req.url === "/__health") {
@@ -100,37 +97,54 @@ async function handleRequest(req, res) {
     return;
   }
 
-  const label = labelFromHost(req.headers.host);
-  const route = resolveLabel(label);
-  if (!route) {
-    res.writeHead(404, { "Content-Type": "text/plain" });
-    res.end("Sandbox no encontrado\n");
-    log("route_not_found", { host: req.headers.host, label });
-    return;
-  }
-
-  let token;
-  try {
-    token = getCachedToken(route.microvmId) || (await ensureToken(route.microvmId));
-  } catch (e) {
-    res.writeHead(503, { "Content-Type": "text/plain" });
-    res.end("No se pudo autenticar con el sandbox\n");
-    log("token_error", { label, microvmId: route.microvmId, error: String(e) });
-    return;
-  }
-
-  req._sandboxRoute = route;
-  req._sandboxToken = token;
-  proxy.web(req, res, {
-    target: targetFor(route),
-    changeOrigin: true,
-    secure: true,
-    headers: {
-      Host: route.endpoint,
-      "X-aws-proxy-auth": token,
-      "X-aws-proxy-port": String(UPSTREAM_PORT),
-    },
+  const ctx = await resolveRouteAndToken(req, (code, msg) => {
+    res.writeHead(code, { "Content-Type": "text/plain" });
+    res.end(msg);
   });
+  if (!ctx) return;
+  const { label, route, token } = ctx;
+
+  // Copiamos los headers del cliente, fijamos Host del endpoint e inyectamos
+  // los headers de auth. Quitamos cualquier x-aws-proxy-* entrante del cliente.
+  const headers = { ...req.headers };
+  delete headers["x-aws-proxy-auth"];
+  delete headers["x-aws-proxy-port"];
+  headers["host"] = route.endpoint;
+  headers["x-aws-proxy-auth"] = token;
+  headers["x-aws-proxy-port"] = String(UPSTREAM_PORT);
+
+  const upstreamReq = https.request(
+    {
+      host: route.endpoint,
+      port: 443,
+      servername: route.endpoint,
+      method: req.method,
+      path: req.url,
+      headers,
+    },
+    (upstreamRes) => {
+      // Reescribir Set-Cookie (quitar Domain) antes de devolver al navegador.
+      const outHeaders = { ...upstreamRes.headers };
+      const sc = upstreamRes.headers["set-cookie"];
+      if (sc) {
+        outHeaders["set-cookie"] = (Array.isArray(sc) ? sc : [sc]).map(rewriteSetCookie);
+      }
+      res.writeHead(upstreamRes.statusCode || 502, outHeaders);
+      upstreamRes.pipe(res);
+    }
+  );
+
+  upstreamReq.on("error", (e) => {
+    log("http_upstream_error", { label, error: String(e), url: req.url });
+    if (!res.headersSent) {
+      res.writeHead(502, { "Content-Type": "text/plain" });
+      res.end("Sandbox proxy error\n");
+    } else {
+      res.destroy();
+    }
+  });
+
+  req.pipe(upstreamReq);
 }
 
 // --- Arranque: HTTP o HTTPS según haya certs ---
@@ -149,42 +163,47 @@ if (process.env.TLS_CERT && process.env.TLS_KEY) {
   log("tls_disabled_behind_nginx");
 }
 
-// Upgrade de WebSocket — implementación manual con tls.connect.
-// http-proxy pierde/corrompe headers largos (el token JWE ~812 chars) en el
-// handshake WS, causando 401 desde el endpoint. Aquí abrimos la conexión TLS al
-// endpoint nosotros mismos, reenviamos el handshake de upgrade con el token
-// inyectado, y hacemos pipe bidireccional de los sockets.
+// --- Upgrade de WebSocket ---
+// Implementación manual con tls.connect. La auth y el puerto van como
+// SUBPROTOCOLOS (el endpoint no lee X-aws-proxy-* en un upgrade WS). La cookie
+// de sesión del cliente se reenvía intacta (code-server la exige en el WS).
 server.on("upgrade", async (req, socket, head) => {
-  const label = labelFromHost(req.headers.host);
-  const route = resolveLabel(label);
-  if (!route) {
+  const ctx = await resolveRouteAndToken(req, () => socket.destroy());
+  if (!ctx) {
     socket.destroy();
     return;
   }
-  let token;
-  try {
-    token = getCachedToken(route.microvmId) || (await ensureToken(route.microvmId));
-  } catch (e) {
-    log("ws_token_error", { label, error: String(e) });
-    socket.destroy();
-    return;
-  }
+  const { label, route, token } = ctx;
 
-  // Conexión TLS al endpoint de la MicroVM (HTTPS :443, SNI = endpoint).
   const upstream = tls.connect(
     { host: route.endpoint, port: 443, servername: route.endpoint },
     () => {
-      // Reconstruir la request line + headers del cliente, pero con Host del
-      // endpoint y los headers de auth inyectados.
+      // Subprotocolos lambda-microvms.* (auth + puerto). Preservamos los
+      // subprotocolos que envíe el cliente (code-server) y los anteponemos.
+      const clientProtocols = (req.headers["sec-websocket-protocol"] || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const lmProtocols = [
+        `lambda-microvms.authentication.${token}`,
+        "lambda-microvms",
+        `lambda-microvms.port.${UPSTREAM_PORT}`,
+      ];
+
+      const mergedProtocols = [...lmProtocols, ...clientProtocols].join(", ");
+
+      // Reconstruir el handshake con Host del endpoint. Mantenemos los demás
+      // headers del cliente (incluida Cookie, clave para code-server).
       const headers = { ...req.headers };
       delete headers["host"];
       delete headers["x-aws-proxy-auth"];
       delete headers["x-aws-proxy-port"];
+      delete headers["sec-websocket-protocol"];
 
       let raw = `GET ${req.url} HTTP/1.1\r\n`;
       raw += `Host: ${route.endpoint}\r\n`;
-      raw += `X-aws-proxy-auth: ${token}\r\n`;
-      raw += `X-aws-proxy-port: ${UPSTREAM_PORT}\r\n`;
+      raw += `Sec-WebSocket-Protocol: ${mergedProtocols}\r\n`;
       for (const [k, v] of Object.entries(headers)) {
         if (Array.isArray(v)) {
           for (const vv of v) raw += `${k}: ${vv}\r\n`;
@@ -196,20 +215,78 @@ server.on("upgrade", async (req, socket, head) => {
       upstream.write(raw);
       if (head && head.length) upstream.write(head);
 
-      // DEBUG: capturar la primera línea de la respuesta del endpoint.
-      let sniffed = false;
-      upstream.once("data", (chunk) => {
-        if (!sniffed) {
-          sniffed = true;
-          const firstLine = chunk.toString("utf8").split("\r\n")[0];
-          log("ws_upstream_response", { label, firstLine });
-        }
-      });
+      // Qué subprotocolo pidió el cliente original (si pidió alguno). El
+      // navegador/code-server sólo tolera que la respuesta contenga uno que ÉL
+      // haya pedido; los subprotocolos lambda-microvms.* los inyectamos nosotros
+      // y hay que removerlos de la respuesta del handshake.
+      const clientWanted = new Set(clientProtocols.map((p) => p.toLowerCase()));
 
-      // Pipe bidireccional: lo que venga del endpoint va al cliente y viceversa.
-      upstream.pipe(socket);
-      socket.pipe(upstream);
-      log("ws_proxied", { label, tokenLen: token ? token.length : 0, url: req.url });
+      // Interceptar la respuesta de upgrade del upstream: leemos hasta el fin de
+      // headers (\r\n\r\n), reescribimos Sec-WebSocket-Protocol, y recién ahí
+      // conectamos el pipe bidireccional con el resto del stream.
+      let respBuf = Buffer.alloc(0);
+      let headersDone = false;
+
+      const onUpstreamData = (chunk) => {
+        if (headersDone) return;
+        respBuf = Buffer.concat([respBuf, chunk]);
+        const sep = respBuf.indexOf("\r\n\r\n");
+        if (sep === -1) {
+          // Protección: si los headers crecen demasiado, abortar.
+          if (respBuf.length > 64 * 1024) {
+            log("ws_response_headers_too_large", { label });
+            upstream.destroy();
+            socket.destroy();
+          }
+          return;
+        }
+        headersDone = true;
+        upstream.removeListener("data", onUpstreamData);
+
+        const headerText = respBuf.slice(0, sep).toString("utf8");
+        const rest = respBuf.slice(sep + 4);
+
+        const lines = headerText.split("\r\n");
+        const statusLineText = lines[0]; // "HTTP/1.1 101 Switching Protocols"
+        const rewritten = [];
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i];
+          const idx = line.indexOf(":");
+          if (
+            idx !== -1 &&
+            line.slice(0, idx).trim().toLowerCase() === "sec-websocket-protocol"
+          ) {
+            const vals = line
+              .slice(idx + 1)
+              .split(",")
+              .map((s) => s.trim())
+              .filter((p) => clientWanted.has(p.toLowerCase()));
+            // Re-emitimos sólo subprotocolos que el cliente SÍ pidió. El endpoint
+            // siempre selecciona "lambda-microvms" (que ocultamos). Si el cliente
+            // pidió uno propio, le devolvemos su primera opción para que acepte el
+            // handshake; si no pidió ninguno, omitimos el header por completo.
+            let out = vals;
+            if (!out.length && clientProtocols.length) out = [clientProtocols[0]];
+            if (out.length) rewritten.push(`Sec-WebSocket-Protocol: ${out.join(", ")}`);
+            continue;
+          }
+          rewritten.push(line);
+        }
+
+        const status = statusLineText.split(" ")[1] || "?";
+        log("ws_upstream_response", { label, status });
+
+        const finalHead = [statusLineText, ...rewritten].join("\r\n") + "\r\n\r\n";
+        socket.write(finalHead);
+        if (rest.length) socket.write(rest);
+
+        // A partir de aquí, pipe bidireccional del tráfico WS.
+        upstream.pipe(socket);
+        socket.pipe(upstream);
+        log("ws_proxied", { label, url: req.url });
+      };
+
+      upstream.on("data", onUpstreamData);
     }
   );
 
