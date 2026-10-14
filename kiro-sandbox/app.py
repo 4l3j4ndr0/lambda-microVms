@@ -1,9 +1,15 @@
-from flask import Flask
+from flask import Flask, request
 import subprocess, os, time, json
 
-# TODO: hacer el password parametrizable por participante (vía runHookPayload en
-# el hook /run). Por ahora queda fijo para validar que la imagen arranca end-to-end.
-PASSWORD = "microvm2026"
+# Password de ARRANQUE (placeholder). code-server arranca con esto en el boot
+# (antes del snapshot). El password REAL, único por participante, llega en el
+# hook /run vía runHookPayload y reinicia code-server con él. Si por alguna razón
+# /run no trae password, este placeholder queda vigente (fallback seguro: distinto
+# por boot no es necesario porque /run siempre lo pisa en el flujo normal).
+PASSWORD = os.environ.get("PASSWORD", "microvm2026")
+
+# Handle del proceso code-server para poder reiniciarlo con el password real.
+_code_server = None
 
 
 def log(event, **kwargs):
@@ -26,22 +32,40 @@ with open("/root/.bashrc", "w") as f:
 
 # Start code-server immediately (available at boot, before snapshot).
 # Opens the kiro-day workspace folder by default.
-env = {
-    **os.environ,
-    "HOME": "/root",
-    "PATH": "/root/.local/bin:/usr/local/bin:" + os.environ.get("PATH", ""),
-    "PASSWORD": PASSWORD,
-}
-subprocess.Popen(
-    [
-        "code-server",
-        "--bind-addr", "0.0.0.0:8080",
-        "--auth", "password",
-        "--disable-telemetry",
-        "/root/project/kiro-day",
-    ],
-    env=env,
-)
+def start_code_server(password):
+    """(Re)arranca code-server con el password dado. Si ya hay uno corriendo, lo
+    termina primero. Devuelve el Popen. code-server lee el password de la env var
+    PASSWORD al arrancar, así que para cambiarlo hay que reiniciar el proceso."""
+    global _code_server
+    if _code_server is not None and _code_server.poll() is None:
+        try:
+            _code_server.terminate()
+            _code_server.wait(timeout=5)
+        except Exception:  # noqa: BLE001 - best effort
+            try:
+                _code_server.kill()
+            except Exception:  # noqa: BLE001
+                pass
+    env = {
+        **os.environ,
+        "HOME": "/root",
+        "PATH": "/root/.local/bin:/usr/local/bin:" + os.environ.get("PATH", ""),
+        "PASSWORD": password,
+    }
+    _code_server = subprocess.Popen(
+        [
+            "code-server",
+            "--bind-addr", "0.0.0.0:8080",
+            "--auth", "password",
+            "--disable-telemetry",
+            "/root/project/kiro-day",
+        ],
+        env=env,
+    )
+    return _code_server
+
+
+start_code_server(PASSWORD)
 
 
 def reseed_entropy():
@@ -78,7 +102,26 @@ def validate():
 
 @hooks.post(f"{P}/run")
 def run():
-    log("hook_run")
+    """Fires once post-resume. Recibe el password único de este sandbox en el body
+    (runHookPayload) y reinicia code-server con él. Es rápido (reinicio de un
+    proceso local), dentro del timeout del hook /run."""
+    password = None
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        password = payload.get("password")
+    except Exception as e:  # noqa: BLE001
+        log("hook_run_payload_error", error=str(e))
+
+    if password:
+        try:
+            start_code_server(password)
+            # No logueamos el password (secreto); solo que se aplicó.
+            log("hook_run", password_applied=True)
+        except Exception as e:  # noqa: BLE001
+            log("hook_run_restart_failed", error=str(e))
+            return "", 500
+    else:
+        log("hook_run", password_applied=False)
     return "", 200
 
 

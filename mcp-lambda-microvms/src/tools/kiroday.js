@@ -243,6 +243,8 @@ export function registerKirodayTools(server) {
     async () => {
       try {
         const routes = await readJson("routes.json");
+        // Whitelist explícita de campos: NO exponer r.password (secreto por
+        // sandbox). Mantener esta lista acotada para no filtrarlo al chat.
         const items = Object.entries(routes).map(([label, r]) => ({
           label,
           name: r.name || null,

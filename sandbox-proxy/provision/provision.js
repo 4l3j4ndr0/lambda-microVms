@@ -42,8 +42,9 @@ const ROUTES_FILE = process.env.ROUTES_FILE
   ? path.resolve(process.env.ROUTES_FILE)
   : path.resolve(process.cwd(), "routes.json");
 const SES_FROM = process.env.SES_FROM || "no-reply@awslearn.cloud";
-// Password de code-server (fijo en la imagen por ahora; igual que en app.py).
-// Cuando se parametrice por participante, vendrá por runHookPayload.
+// Password de FALLBACK para code-server. Solo se usa si no se genera uno por
+// sandbox (p.ej. una llamada vieja). El flujo normal genera un password único
+// por VM con generatePassword() y lo manda por runHookPayload + email.
 export const PASSWORD = process.env.SANDBOX_PASSWORD || "microvm2026";
 
 const IMAGE_ARN = `arn:aws:lambda:${REGION}:${ACCOUNT}:microvm-image:${IMAGE}`;
@@ -58,6 +59,29 @@ export function log(event, extra = {}) {
 export function randomLabel() {
   // 7 chars alfanuméricos en minúscula; sirve como subdominio y como secreto.
   return randomBytes(8).toString("hex").slice(0, 7);
+}
+
+// Alfabeto sin caracteres ambiguos (0/O, 1/l/I) para que el password sea fácil
+// de teclear desde el email. Mayúsculas, minúsculas y dígitos.
+const PWD_ALPHABET =
+  "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+
+/**
+ * Genera un password aleatorio por sandbox usando un CSPRNG (randomBytes), con
+ * muestreo por rechazo para no sesgar la distribución. Default 16 chars.
+ */
+export function generatePassword(len = 16) {
+  const out = [];
+  const max = Math.floor(256 / PWD_ALPHABET.length) * PWD_ALPHABET.length;
+  while (out.length < len) {
+    for (const b of randomBytes(len * 2)) {
+      if (b < max) {
+        out.push(PWD_ALPHABET[b % PWD_ALPHABET.length]);
+        if (out.length === len) break;
+      }
+    }
+  }
+  return out.join("");
 }
 
 export function loadRoutes() {
@@ -83,7 +107,7 @@ export function saveRoutes(routes) {
 // Tope de la plataforma para la vida máxima de una MicroVM (8 h en segundos).
 export const PLATFORM_MAX_DURATION_SECONDS = 28800;
 
-export async function runMicrovm({ imageVersion, maxDurationSeconds } = {}) {
+export async function runMicrovm({ imageVersion, maxDurationSeconds, password } = {}) {
   // La versión efectiva: la que pase el llamador (p.ej. fleet.js leyendo
   // config.json en caliente) o, si no, el default del .env/constante.
   const version = imageVersion || IMAGE_VERSION;
@@ -96,19 +120,24 @@ export async function runMicrovm({ imageVersion, maxDurationSeconds } = {}) {
     Number.isFinite(n) && n > 0
       ? Math.min(Math.max(Math.floor(n), 60), PLATFORM_MAX_DURATION_SECONDS)
       : PLATFORM_MAX_DURATION_SECONDS;
-  const res = await mvm.send(
-    new RunMicrovmCommand({
-      imageIdentifier: IMAGE_ARN,
-      imageVersion: version,
-      executionRoleArn: EXEC_ROLE,
-      idlePolicy: {
-        maxIdleDurationSeconds: 3600,
-        suspendedDurationSeconds: 1800,
-        autoResumeEnabled: true,
-      },
-      maximumDurationInSeconds: maxDuration,
-    })
-  );
+  const cmd = {
+    imageIdentifier: IMAGE_ARN,
+    imageVersion: version,
+    executionRoleArn: EXEC_ROLE,
+    idlePolicy: {
+      maxIdleDurationSeconds: 3600,
+      suspendedDurationSeconds: 1800,
+      autoResumeEnabled: true,
+    },
+    maximumDurationInSeconds: maxDuration,
+  };
+  // Password único por sandbox: se entrega al hook /run como body (runHookPayload),
+  // que reconfigura code-server con él. NO viaja en env vars (quedarían en el
+  // snapshot, iguales para todas las VMs). El mismo valor va al email.
+  if (password) {
+    cmd.runHookPayload = JSON.stringify({ password });
+  }
+  const res = await mvm.send(new RunMicrovmCommand(cmd));
   return { microvmId: res.microvmId, endpoint: res.endpoint, state: res.state };
 }
 
@@ -280,8 +309,12 @@ export function buildEmail({ name, url, password }) {
   return { subject, text, html };
 }
 
-export async function sendEmail({ name, email, url }) {
-  const { subject, text, html } = buildEmail({ name, url, password: PASSWORD });
+export async function sendEmail({ name, email, url, password }) {
+  const { subject, text, html } = buildEmail({
+    name,
+    url,
+    password: password || PASSWORD,
+  });
   await ses.send(
     new SendEmailCommand({
       FromEmailAddress: SES_FROM,
@@ -298,7 +331,8 @@ export async function sendEmail({ name, email, url }) {
 
 export async function provisionOne({ name, email }) {
   log("provision_start", { email, name });
-  const { microvmId, endpoint } = await runMicrovm();
+  const password = generatePassword();
+  const { microvmId, endpoint } = await runMicrovm({ password });
   log("microvm_created", { microvmId, endpoint });
 
   await waitRunning(microvmId);
@@ -308,14 +342,21 @@ export async function provisionOne({ name, email }) {
   const url = `https://${label}.${BASE_DOMAIN}`;
 
   const routes = loadRoutes();
-  routes[label] = { microvmId, endpoint, email, name: name || null, createdAt: Date.now() };
+  routes[label] = {
+    microvmId,
+    endpoint,
+    email,
+    name: name || null,
+    password,
+    createdAt: Date.now(),
+  };
   saveRoutes(routes);
   log("route_written", { label, url });
 
   if (process.env.SKIP_EMAIL === "1") {
     log("email_skipped", { email });
   } else {
-    await sendEmail({ name, email, url });
+    await sendEmail({ name, email, url, password });
     log("email_sent", { email });
   }
 

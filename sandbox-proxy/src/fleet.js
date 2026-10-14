@@ -24,6 +24,7 @@ import {
   waitRunning,
   sendEmail,
   randomLabel,
+  generatePassword,
   mvm,
   BASE_DOMAIN,
   PLATFORM_MAX_DURATION_SECONDS,
@@ -226,13 +227,18 @@ export async function ensureSandbox({ name, email, sendMail = true }) {
   }
 
   // Idempotencia: si ya existe, reenvía su URL (opcionalmente el correo) y no
-  // gasta otra VM.
+  // gasta otra VM. Reenvía el MISMO password que se guardó al crearlo.
   const existing = findByEmail(cleanEmail);
   if (existing) {
     log("sandbox_exists", { email: cleanEmail, label: existing.label });
     if (sendMail) {
       try {
-        await sendEmail({ name, email: cleanEmail, url: existing.url });
+        await sendEmail({
+          name,
+          email: cleanEmail,
+          url: existing.url,
+          password: existing.password,
+        });
         log("email_resent", { email: cleanEmail, label: existing.label });
       } catch (e) {
         log("email_resend_failed", { email: cleanEmail, error: String(e) });
@@ -253,10 +259,13 @@ export async function ensureSandbox({ name, email, sendMail = true }) {
 
   // Crear la VM + ruta. Reusa la lógica de provision.js. La versión de imagen y
   // la vida máxima (TTL duro) salen de config.json (modificables en caliente
-  // desde el MCP), no del .env.
+  // desde el MCP), no del .env. El password es único por sandbox (CSPRNG) y se
+  // entrega a la VM por runHookPayload; el mismo valor va al email.
+  const password = generatePassword();
   const { microvmId, endpoint } = await runMicrovm({
     imageVersion,
     maxDurationSeconds: sandboxMaxDurationSeconds,
+    password,
   });
   log("microvm_created", {
     microvmId,
@@ -298,13 +307,14 @@ export async function ensureSandbox({ name, email, sendMail = true }) {
     endpoint,
     email: cleanEmail,
     name: name || null,
+    password,
     createdAt: Date.now(),
   };
   saveRoutes(routes);
   log("route_written", { label, url, email: cleanEmail });
 
   if (sendMail) {
-    await sendEmail({ name, email: cleanEmail, url });
+    await sendEmail({ name, email: cleanEmail, url, password });
     log("email_sent", { email: cleanEmail, label });
   }
 
