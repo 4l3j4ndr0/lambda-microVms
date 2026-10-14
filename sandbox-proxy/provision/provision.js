@@ -80,10 +80,22 @@ export function saveRoutes(routes) {
   renameSync(tmp, ROUTES_FILE);
 }
 
-export async function runMicrovm({ imageVersion } = {}) {
+// Tope de la plataforma para la vida máxima de una MicroVM (8 h en segundos).
+export const PLATFORM_MAX_DURATION_SECONDS = 28800;
+
+export async function runMicrovm({ imageVersion, maxDurationSeconds } = {}) {
   // La versión efectiva: la que pase el llamador (p.ej. fleet.js leyendo
   // config.json en caliente) o, si no, el default del .env/constante.
   const version = imageVersion || IMAGE_VERSION;
+  // Vida máxima (TTL duro): al alcanzarla, la plataforma TERMINA la MicroVM sin
+  // importar la actividad. Sale de config.json (modificable en caliente desde el
+  // MCP); si no se pasa, cae al tope de la plataforma. Se clampa al rango válido
+  // [60, 28800] para que AWS no rechace el RunMicrovm.
+  const n = Number(maxDurationSeconds);
+  const maxDuration =
+    Number.isFinite(n) && n > 0
+      ? Math.min(Math.max(Math.floor(n), 60), PLATFORM_MAX_DURATION_SECONDS)
+      : PLATFORM_MAX_DURATION_SECONDS;
   const res = await mvm.send(
     new RunMicrovmCommand({
       imageIdentifier: IMAGE_ARN,
@@ -94,7 +106,7 @@ export async function runMicrovm({ imageVersion } = {}) {
         suspendedDurationSeconds: 1800,
         autoResumeEnabled: true,
       },
-      maximumDurationInSeconds: 28800, // 8h, tope de la plataforma
+      maximumDurationInSeconds: maxDuration,
     })
   );
   return { microvmId: res.microvmId, endpoint: res.endpoint, state: res.state };

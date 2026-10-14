@@ -25,6 +25,14 @@ const REGISTER_URL =
   `https://registro.${BASE_DOMAIN}/api/register`;
 
 // Defaults coherentes con fleet.js del proxy.
+const PLATFORM_MAX_DURATION_SECONDS = 28800; // 8 h, tope de la plataforma.
+
+function clampMaxDuration(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return 14400; // default 4 h
+  return Math.min(Math.max(Math.floor(v), 60), PLATFORM_MAX_DURATION_SECONDS);
+}
+
 function normalizeConfig(cfg) {
   const max = Number(cfg.maxSandboxes);
   const ver =
@@ -36,6 +44,9 @@ function normalizeConfig(cfg) {
     registrationEnabled:
       typeof cfg.registrationEnabled === "boolean" ? cfg.registrationEnabled : true,
     imageVersion: ver,
+    sandboxMaxDurationSeconds: clampMaxDuration(
+      cfg.sandboxMaxDurationSeconds != null ? cfg.sandboxMaxDurationSeconds : 14400
+    ),
   };
 }
 
@@ -56,8 +67,8 @@ export function registerKirodayTools(server) {
     "kiroday_get_config",
     {
       description:
-        "Lee la config del evento (maxSandboxes, registrationEnabled, imageVersion) " +
-        "desde el EC2. Modificable en caliente sin reiniciar el proxy.",
+        "Lee la config del evento (maxSandboxes, registrationEnabled, imageVersion, " +
+        "sandboxMaxDurationSeconds) desde el EC2. Modificable en caliente sin reiniciar el proxy.",
       inputSchema: {},
     },
     async () => {
@@ -120,6 +131,39 @@ export function registerKirodayTools(server) {
       try {
         const cfg = await patchConfig({ imageVersion });
         return toolResult(cfg, `imageVersion = ${cfg.imageVersion}.`);
+      } catch (e) {
+        return toolError(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "kiroday_set_sandbox_duration",
+    {
+      description:
+        "Cambia la VIDA MÁXIMA (TTL duro) de los nuevos sandboxes en caliente. Al " +
+        "alcanzarla, la plataforma TERMINA la MicroVM sin importar la actividad. " +
+        "Se expresa en minutos (se convierte a segundos). Rango válido: 1 min a 480 min " +
+        "(8 h, tope de la plataforma). Afecta solo a los sandboxes creados DESPUÉS del " +
+        "cambio; los ya corriendo conservan su TTL original.",
+      inputSchema: {
+        minutes: z
+          .number()
+          .min(1)
+          .max(480)
+          .describe("Vida máxima del sandbox en minutos (1–480)"),
+      },
+    },
+    async ({ minutes }) => {
+      try {
+        const seconds = clampMaxDuration(Math.round(minutes * 60));
+        const cfg = await patchConfig({ sandboxMaxDurationSeconds: seconds });
+        return toolResult(
+          cfg,
+          `Vida máxima de los nuevos sandboxes = ${Math.round(
+            cfg.sandboxMaxDurationSeconds / 60
+          )} min (${cfg.sandboxMaxDurationSeconds}s).`
+        );
       } catch (e) {
         return toolError(e);
       }

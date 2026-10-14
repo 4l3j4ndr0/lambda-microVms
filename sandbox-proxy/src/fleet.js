@@ -26,6 +26,7 @@ import {
   randomLabel,
   mvm,
   BASE_DOMAIN,
+  PLATFORM_MAX_DURATION_SECONDS,
 } from "../provision/provision.js";
 
 const DATA_DIR = process.env.ROUTES_FILE
@@ -42,9 +43,21 @@ const DEFAULT_REGISTRATION_ENABLED =
   process.env.REGISTRATION_ENABLED === "0" ? false : true;
 // Versión de imagen por defecto: la del .env, o la que usa provision.js.
 const DEFAULT_IMAGE_VERSION = process.env.IMAGE_VERSION || "7.0";
+// Vida máxima (TTL duro) por defecto de cada sandbox, en segundos. Al alcanzarla
+// la plataforma TERMINA la MicroVM. Default 4 h; tope de la plataforma 8 h.
+const DEFAULT_MAX_DURATION = Number(
+  process.env.SANDBOX_MAX_DURATION_SECONDS || 14400
+);
 
 function log(event, extra = {}) {
   console.log(JSON.stringify({ ts: Date.now(), src: "fleet", event, ...extra }));
+}
+
+/** Clampa la vida máxima al rango válido de la plataforma [60, 28800]. */
+function clampMaxDuration(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return DEFAULT_MAX_DURATION;
+  return Math.min(Math.max(Math.floor(v), 60), PLATFORM_MAX_DURATION_SECONDS);
 }
 
 // --- Config (MAX + flag de registro + versión de imagen, en caliente) --------
@@ -56,6 +69,7 @@ export function getConfig() {
       maxSandboxes: DEFAULT_MAX,
       registrationEnabled: DEFAULT_REGISTRATION_ENABLED,
       imageVersion: DEFAULT_IMAGE_VERSION,
+      sandboxMaxDurationSeconds: clampMaxDuration(DEFAULT_MAX_DURATION),
     };
   }
   try {
@@ -73,6 +87,11 @@ export function getConfig() {
           ? cfg.registrationEnabled
           : DEFAULT_REGISTRATION_ENABLED,
       imageVersion: ver,
+      sandboxMaxDurationSeconds: clampMaxDuration(
+        cfg.sandboxMaxDurationSeconds != null
+          ? cfg.sandboxMaxDurationSeconds
+          : DEFAULT_MAX_DURATION
+      ),
     };
   } catch (e) {
     log("config_read_error", { error: String(e) });
@@ -80,6 +99,7 @@ export function getConfig() {
       maxSandboxes: DEFAULT_MAX,
       registrationEnabled: DEFAULT_REGISTRATION_ENABLED,
       imageVersion: DEFAULT_IMAGE_VERSION,
+      sandboxMaxDurationSeconds: clampMaxDuration(DEFAULT_MAX_DURATION),
     };
   }
 }
@@ -133,6 +153,25 @@ export function setImageVersion(version) {
   const cfg = { ...getConfig(), imageVersion: v };
   saveConfig(cfg);
   log("image_version_set", { imageVersion: v });
+  return cfg;
+}
+
+/**
+ * Cambia la vida máxima (TTL duro) de los NUEVOS sandboxes, en segundos, en
+ * caliente (sin reiniciar). Lo usará el MCP. Afecta solo a las MicroVMs que se
+ * creen DESPUÉS del cambio; las ya corriendo conservan el TTL con el que se
+ * lanzaron (es un parámetro de RunMicrovm, no se puede re-aplicar en vivo).
+ * Se clampa al rango válido de la plataforma [60, 28800]. Devuelve la config.
+ */
+export function setSandboxMaxDuration(seconds) {
+  const n = Number(seconds);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(`sandboxMaxDurationSeconds inválido: ${seconds}`);
+  }
+  const clamped = clampMaxDuration(n);
+  const cfg = { ...getConfig(), sandboxMaxDurationSeconds: clamped };
+  saveConfig(cfg);
+  log("sandbox_max_duration_set", { sandboxMaxDurationSeconds: clamped });
   return cfg;
 }
 
@@ -203,7 +242,7 @@ export async function ensureSandbox({ name, email, sendMail = true }) {
   }
 
   // Cap global: cinturón de seguridad contra costos/abuso. Modificable en caliente.
-  const { maxSandboxes, imageVersion } = getConfig();
+  const { maxSandboxes, imageVersion, sandboxMaxDurationSeconds } = getConfig();
   const current = countSandboxes();
   if (current >= maxSandboxes) {
     log("cap_reached", { current, maxSandboxes, email: cleanEmail });
@@ -212,10 +251,20 @@ export async function ensureSandbox({ name, email, sendMail = true }) {
     throw err;
   }
 
-  // Crear la VM + ruta. Reusa la lógica de provision.js. La versión de imagen
-  // sale de config.json (modificable en caliente desde el MCP), no del .env.
-  const { microvmId, endpoint } = await runMicrovm({ imageVersion });
-  log("microvm_created", { microvmId, endpoint, email: cleanEmail, imageVersion });
+  // Crear la VM + ruta. Reusa la lógica de provision.js. La versión de imagen y
+  // la vida máxima (TTL duro) salen de config.json (modificables en caliente
+  // desde el MCP), no del .env.
+  const { microvmId, endpoint } = await runMicrovm({
+    imageVersion,
+    maxDurationSeconds: sandboxMaxDurationSeconds,
+  });
+  log("microvm_created", {
+    microvmId,
+    endpoint,
+    email: cleanEmail,
+    imageVersion,
+    sandboxMaxDurationSeconds,
+  });
   await waitRunning(microvmId);
   log("microvm_running", { microvmId });
 
