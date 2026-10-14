@@ -1,0 +1,11 @@
+{
+  "workbench.colorTheme": "Dracula Theme",
+  "workbench.iconTheme": "material-icon-theme",
+  "workbench.startupEditor": "none",
+  "editor.fontFamily": "Menlo, Monaco, 'Courier New', monospace",
+  "editor.fontSize": 14,
+  "editor.minimap.enabled": false,
+  "terminal.integrated.fontSize": 13,
+  "security.workspace.trust.enabled": false,
+  "task.allowAutomaticTasks": "on"
+}

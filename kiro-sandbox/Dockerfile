@@ -47,7 +47,69 @@ RUN curl --proto '=https' --tlsv1.2 -sSf \
 # Python deps for hooks
 RUN pip install --no-cache-dir flask==3.0.3
 
+# ---------------------------------------------------------------------------
+# Login personalizado de code-server (parcheo en build-time)
+#   1) Localiza la plantilla login.html del binario standalone.
+#   2) Relaja la CSP: permite estilos inline (banner) e imagenes externas (logo
+#      de Kiro servido por jsdelivr).
+#   3) Inyecta el banner de bienvenida justo despues de <body>.
+# Se usa Python (perl no viene en al2023-minimal); python3 ya esta instalado.
+# ---------------------------------------------------------------------------
+COPY welcome/welcome.html /tmp/welcome.html
+RUN python3 - <<'PYEOF'
+import glob, sys
+matches = glob.glob("/usr/local/lib/**/browser/pages/login.html", recursive=True)
+assert matches, "login.html de code-server no encontrado"
+path = matches[0]
+print("Patching:", path)
+with open(path, encoding="utf-8") as f:
+    html = f.read()
+with open("/tmp/welcome.html", encoding="utf-8") as f:
+    banner = f.read()
+
+# 1) CSP: estilos inline + imagen externa del logo (jsdelivr)
+html = html.replace("style-src 'self'", "style-src 'self' 'unsafe-inline'")
+html = html.replace("img-src 'self' data:", "img-src 'self' data: https://cdn.jsdelivr.net")
+
+# 2) Inyectar el banner tras la primera etiqueta <body...>
+import re
+new_html, n = re.subn(r"(<body[^>]*>)", lambda m: m.group(1) + banner, html, count=1)
+assert n == 1, "no se encontro <body> para inyectar el banner"
+assert "custom-welcome-banner" in new_html
+
+with open(path, "w", encoding="utf-8") as f:
+    f.write(new_html)
+print("OK: banner inyectado y CSP relajada")
+PYEOF
+RUN rm -f /tmp/welcome.html
+
 COPY app.py .
+
+# ---------------------------------------------------------------------------
+# Extensiones por defecto (declarativo en extensions.txt), settings (tema +
+# icon theme), workspace inicial "kiro-day" y script de terminal de bienvenida.
+# Todo horneado en el user-data-dir de root (donde code-server standalone busca).
+# ---------------------------------------------------------------------------
+ENV EXT_DIR=/root/.local/share/code-server/extensions
+ENV USER_DIR=/root/.local/share/code-server/User
+COPY extensions.txt /tmp/extensions.txt
+RUN set -eux; \
+    mkdir -p "$EXT_DIR" "$USER_DIR"; \
+    grep -vE '^\s*(#|$)' /tmp/extensions.txt | while read -r ext; do \
+      echo "Instalando extension: $ext"; \
+      code-server --extensions-dir "$EXT_DIR" --install-extension "$ext"; \
+    done; \
+    rm -f /tmp/extensions.txt
+
+COPY settings.json /root/.local/share/code-server/User/settings.json
+
+# Workspace inicial "kiro-day" (code-server lo abre al arrancar; ver app.py)
+RUN mkdir -p /root/project
+COPY workspace/kiro-day /root/project/kiro-day
+
+# Script de terminal de bienvenida (lo invoca .bashrc, que escribe app.py)
+COPY welcome/welcome-terminal.sh /root/.welcome-terminal.sh
+RUN chmod +x /root/.welcome-terminal.sh
 
 EXPOSE 8080 9000
 CMD ["python3", "app.py"]

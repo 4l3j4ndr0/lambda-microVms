@@ -1,0 +1,16 @@
+# Extensiones instaladas por defecto en la imagen.
+# Una por linea, formato publisher.extension (Open VSX IDs).
+# Las lineas vacias y las que empiezan con '#' se ignoran.
+# code-server usa el marketplace Open VSX (https://open-vsx.org), no el de VS Code.
+
+# --- Tema ---
+dracula-theme.theme-dracula
+
+# --- Iconos ---
+pkief.material-icon-theme
+
+# --- Productividad / lenguajes ---
+# ms-python.python
+# esbenp.prettier-vscode
+# dbaeumer.vscode-eslint
+# redhat.vscode-yaml

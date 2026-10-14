@@ -12,11 +12,20 @@ def log(event, **kwargs):
 
 
 # Write bashrc so all terminals (incl. code-server integrated terminals) get
-# Kiro CLI on PATH.
+# Kiro CLI on PATH, and show the welcome banner on interactive shells.
+# NOTE: this file is rewritten on every boot, so the welcome hook must live here
+# (not baked only via Dockerfile, which this would overwrite).
 with open("/root/.bashrc", "w") as f:
-    f.write("export PATH=/root/.local/bin:/usr/local/bin:$PATH\n")
+    f.write(
+        "export PATH=/root/.local/bin:/usr/local/bin:$PATH\n"
+        "# Mensaje de bienvenida Kiro Day (solo shells interactivos)\n"
+        "if [[ $- == *i* ]] && [ -f /root/.welcome-terminal.sh ]; then\n"
+        "  . /root/.welcome-terminal.sh\n"
+        "fi\n"
+    )
 
 # Start code-server immediately (available at boot, before snapshot).
+# Opens the kiro-day workspace folder by default.
 env = {
     **os.environ,
     "HOME": "/root",
@@ -24,7 +33,13 @@ env = {
     "PASSWORD": PASSWORD,
 }
 subprocess.Popen(
-    ["code-server", "--bind-addr", "0.0.0.0:8080", "--auth", "password", "--disable-telemetry"],
+    [
+        "code-server",
+        "--bind-addr", "0.0.0.0:8080",
+        "--auth", "password",
+        "--disable-telemetry",
+        "/root/project/kiro-day",
+    ],
     env=env,
 )
 

@@ -1,0 +1,24 @@
+services:
+  code-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: code-server-dracula:latest
+    container_name: code-server-dracula
+    # El usuario coder dentro de la imagen es UID:GID 1000:1000.
+    # Lo fijamos explicitamente para que coincida con los bind mounts.
+    user: "1000:1000"
+    ports:
+      - "8080:8080"
+    environment:
+      # Contrasena del login. Cambiala por una segura o define CODE_SERVER_PASSWORD.
+      PASSWORD: "${CODE_SERVER_PASSWORD:-cambia-esta-clave}"
+      DISABLE_TELEMETRY: "true"
+    volumes:
+      # Persiste tus proyectos en ./workspace del host.
+      - ./workspace:/home/coder/project
+      # Persiste la config de code-server en ./config del host (bind mount,
+      # escribible por el usuario 1000). No montamos todo .local para no
+      # pisar el tema Dracula ni los settings horneados en la imagen.
+      - ./config:/home/coder/.config
+    restart: unless-stopped

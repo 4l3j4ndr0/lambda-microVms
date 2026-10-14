@@ -20,3 +20,10 @@ sandbox-proxy/routes.json
 
 # Export de sesión de Kiro (no es código; 1.7MB de historial de conversación)
 demo-microVms/microvms.json
+
+# Config autogenerada de code-server (contiene password; no versionar)
+**/config/code-server/config.yaml
+
+# Artefactos de build de la imagen MicroVM
+**/kiro-sandbox.zip
+**/code-artifact*.zip

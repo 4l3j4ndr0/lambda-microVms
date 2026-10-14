@@ -47,19 +47,31 @@ code-server y kiro-cli ya están presentes en el snapshot (listos al boot).
 ## Autenticación de Kiro CLI (headless) ⚠️
 
 Kiro CLI requiere login con AWS Builder ID. En una MicroVM efímera y sin navegador,
-`kiro-cli login` usa **device-code flow**: imprime una URL + código que el participante
+el login usa **device-code flow**: imprime una URL + código que el participante
 abre en el navegador de su laptop para autorizar. No requiere navegador dentro de la VM.
 
 ```bash
 # Dentro del terminal de code-server:
-kiro-cli login
-# → Abre https://device.sso... e ingresa el código mostrado
+kiro-cli login --use-device-flow
+# → Abre la URL mostrada e ingresa el código
 kiro-cli chat          # ya autenticado
 ```
 
 > **No** incrustar credenciales ni tokens de Builder ID en la imagen: el snapshot se
 > comparte entre todas las MicroVMs de la misma versión. Cada participante hace su
-> propio `kiro-cli login` tras arrancar su sandbox.
+> propio `kiro-cli login --use-device-flow` tras arrancar su sandbox.
+
+## Experiencia por defecto (code-server)
+
+La imagen viene preconfigurada para que el participante no tenga que ajustar nada:
+
+- **Extensiones** (declarativas en `extensions.txt`, marketplace Open VSX): tema
+  Dracula + iconos Material. Para agregar más, añade una línea y reconstruye.
+- **Tema por defecto** vía `settings.json` (`workbench.colorTheme`, `workbench.iconTheme`).
+- **Workspace inicial `kiro-day`**: `app.py` arranca code-server abriendo esa carpeta.
+- **Terminal de bienvenida**: un task `runOn: folderOpen` (`.vscode/tasks.json` del
+  workspace) abre una terminal automáticamente y `.bashrc` imprime el banner con el
+  comando `kiro-cli login --use-device-flow`.
 
 ## Variables
 
@@ -123,7 +135,8 @@ aws iam put-role-policy --role-name MicroVMExecutionRole \
 
 ```bash
 cd kiro-sandbox
-zip kiro-sandbox.zip Dockerfile app.py
+# Incluir Dockerfile, app.py y los nuevos archivos de configuracion/workspace
+zip -r kiro-sandbox.zip Dockerfile app.py extensions.txt settings.json welcome workspace
 aws s3 cp kiro-sandbox.zip s3://$BUCKET/microvm-images/kiro-sandbox/code-artifact.zip
 ```
 
@@ -223,8 +236,8 @@ Abrir: **http://localhost:8080** — Password: **microvm2026**
 En un terminal de VS Code (dentro del navegador):
 
 ```bash
-kiro-cli login     # device-code: abre la URL mostrada en tu laptop
-kiro-cli chat      # empezar a usar el agente
+kiro-cli login --use-device-flow   # device-code: abre la URL mostrada en tu laptop
+kiro-cli chat                       # empezar a usar el agente
 ```
 
 ### 7. Usar floci (ya configurado automáticamente)
