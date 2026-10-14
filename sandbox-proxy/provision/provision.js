@@ -42,6 +42,9 @@ const ROUTES_FILE = process.env.ROUTES_FILE
   ? path.resolve(process.env.ROUTES_FILE)
   : path.resolve(process.cwd(), "routes.json");
 const SES_FROM = process.env.SES_FROM || "no-reply@awslearn.cloud";
+// Password de code-server (fijo en la imagen por ahora; igual que en app.py).
+// Cuando se parametrice por participante, vendrá por runHookPayload.
+const PASSWORD = process.env.SANDBOX_PASSWORD || "microvm2026";
 
 const IMAGE_ARN = `arn:aws:lambda:${REGION}:${ACCOUNT}:microvm-image:${IMAGE}`;
 
