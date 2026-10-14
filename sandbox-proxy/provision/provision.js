@@ -80,11 +80,14 @@ export function saveRoutes(routes) {
   renameSync(tmp, ROUTES_FILE);
 }
 
-export async function runMicrovm() {
+export async function runMicrovm({ imageVersion } = {}) {
+  // La versión efectiva: la que pase el llamador (p.ej. fleet.js leyendo
+  // config.json en caliente) o, si no, el default del .env/constante.
+  const version = imageVersion || IMAGE_VERSION;
   const res = await mvm.send(
     new RunMicrovmCommand({
       imageIdentifier: IMAGE_ARN,
-      imageVersion: IMAGE_VERSION,
+      imageVersion: version,
       executionRoleArn: EXEC_ROLE,
       idlePolicy: {
         maxIdleDurationSeconds: 3600,

@@ -38,6 +38,7 @@ import { fileURLToPath } from "node:url";
 import { resolveLabel, allLabels } from "./routes.js";
 import { ensureToken, getCachedToken } from "./tokenManager.js";
 import { handleRegister, handleStatus, queueStatus } from "./registration.js";
+import { getConfig } from "./fleet.js";
 
 const PORT = Number(process.env.PORT || 8443);
 const BASE_DOMAIN = process.env.BASE_DOMAIN || "sandbox.awslearn.cloud";
@@ -125,7 +126,14 @@ async function handleRequest(req, res) {
   // Healthcheck simple
   if (req.url === "/__health") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true, labels: allLabels().length, queue: queueStatus() }));
+    res.end(
+      JSON.stringify({
+        ok: true,
+        labels: allLabels().length,
+        queue: queueStatus(),
+        config: getConfig(),
+      })
+    );
     return;
   }
 

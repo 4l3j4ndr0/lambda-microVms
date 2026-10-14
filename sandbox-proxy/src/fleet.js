@@ -40,12 +40,14 @@ const DEFAULT_MAX = Number(process.env.MAX_SANDBOXES || 60);
 // Registro habilitado por defecto salvo que se diga lo contrario por env.
 const DEFAULT_REGISTRATION_ENABLED =
   process.env.REGISTRATION_ENABLED === "0" ? false : true;
+// Versión de imagen por defecto: la del .env, o la que usa provision.js.
+const DEFAULT_IMAGE_VERSION = process.env.IMAGE_VERSION || "7.0";
 
 function log(event, extra = {}) {
   console.log(JSON.stringify({ ts: Date.now(), src: "fleet", event, ...extra }));
 }
 
-// --- Config (MAX + flag de registro, modificables en caliente) ---------------
+// --- Config (MAX + flag de registro + versión de imagen, en caliente) --------
 
 /** Lee config.json. Si falta o está corrupto, devuelve defaults seguros. */
 export function getConfig() {
@@ -53,11 +55,16 @@ export function getConfig() {
     return {
       maxSandboxes: DEFAULT_MAX,
       registrationEnabled: DEFAULT_REGISTRATION_ENABLED,
+      imageVersion: DEFAULT_IMAGE_VERSION,
     };
   }
   try {
     const cfg = JSON.parse(readFileSync(CONFIG_FILE, "utf8") || "{}");
     const max = Number(cfg.maxSandboxes);
+    const ver =
+      typeof cfg.imageVersion === "string" && cfg.imageVersion.trim()
+        ? cfg.imageVersion.trim()
+        : DEFAULT_IMAGE_VERSION;
     return {
       maxSandboxes: Number.isFinite(max) && max >= 0 ? max : DEFAULT_MAX,
       // Solo false si está explícitamente en false; cualquier otra cosa -> default.
@@ -65,12 +72,14 @@ export function getConfig() {
         typeof cfg.registrationEnabled === "boolean"
           ? cfg.registrationEnabled
           : DEFAULT_REGISTRATION_ENABLED,
+      imageVersion: ver,
     };
   } catch (e) {
     log("config_read_error", { error: String(e) });
     return {
       maxSandboxes: DEFAULT_MAX,
       registrationEnabled: DEFAULT_REGISTRATION_ENABLED,
+      imageVersion: DEFAULT_IMAGE_VERSION,
     };
   }
 }
@@ -107,6 +116,23 @@ export function setRegistrationEnabled(enabled) {
   const cfg = { ...getConfig(), registrationEnabled: flag };
   saveConfig(cfg);
   log("registration_enabled_set", { registrationEnabled: flag });
+  return cfg;
+}
+
+/**
+ * Cambia la versión de imagen desde la que se lanzan las nuevas MicroVMs, en
+ * caliente (sin reiniciar). Lo usará el MCP tras construir una nueva versión.
+ * No valida contra AWS aquí (eso lo hace el MCP/quien llame); solo persiste.
+ * Devuelve la config resultante.
+ */
+export function setImageVersion(version) {
+  const v = String(version || "").trim();
+  if (!/^\d+\.\d+$/.test(v)) {
+    throw new Error(`imageVersion inválida (esperado major.minor): ${version}`);
+  }
+  const cfg = { ...getConfig(), imageVersion: v };
+  saveConfig(cfg);
+  log("image_version_set", { imageVersion: v });
   return cfg;
 }
 
@@ -177,7 +203,7 @@ export async function ensureSandbox({ name, email, sendMail = true }) {
   }
 
   // Cap global: cinturón de seguridad contra costos/abuso. Modificable en caliente.
-  const { maxSandboxes } = getConfig();
+  const { maxSandboxes, imageVersion } = getConfig();
   const current = countSandboxes();
   if (current >= maxSandboxes) {
     log("cap_reached", { current, maxSandboxes, email: cleanEmail });
@@ -186,9 +212,10 @@ export async function ensureSandbox({ name, email, sendMail = true }) {
     throw err;
   }
 
-  // Crear la VM + ruta. Reusa la lógica de provision.js.
-  const { microvmId, endpoint } = await runMicrovm();
-  log("microvm_created", { microvmId, endpoint, email: cleanEmail });
+  // Crear la VM + ruta. Reusa la lógica de provision.js. La versión de imagen
+  // sale de config.json (modificable en caliente desde el MCP), no del .env.
+  const { microvmId, endpoint } = await runMicrovm({ imageVersion });
+  log("microvm_created", { microvmId, endpoint, email: cleanEmail, imageVersion });
   await waitRunning(microvmId);
   log("microvm_running", { microvmId });
 
