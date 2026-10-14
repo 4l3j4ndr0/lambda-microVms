@@ -15,7 +15,7 @@ que el usuario debe correr después.
 | Fase | Automatizado por el skill | Lo hace el usuario |
 |------|---------------------------|--------------------|
 | Validar profile/credenciales | ✅ | |
-| Empaquetar `Dockerfile` + `app.py` en zip | ✅ | |
+| Empaquetar el contexto de build (`Dockerfile` + todo lo que el Dockerfile hace `COPY`) en zip | ✅ | |
 | Subir a S3 con versión incremental (`code-artifact-vN.zip`) | ✅ | |
 | `create-microvm-image` / `update-microvm-image` | ❌ (guía) | ✅ |
 | `run-microvm`, token, Caddy | ❌ (guía) | ✅ |
@@ -70,9 +70,11 @@ bash ~/.kiro/skills/microvm-deploy/deploy.sh kiro-sandbox /Users/usuario/Documen
 El script:
 1. Valida que existan `Dockerfile` y `app.py` en la ruta.
 2. Calcula la siguiente versión mirando lo que ya hay en `s3://.../microvm-images/<nombre>/`.
-3. Crea el zip (`Dockerfile` + `app.py` en la raíz del zip — convención del steering).
+3. Crea el zip con **todo el contexto de build** del proyecto (Dockerfile en la raíz del zip, más cualquier archivo/carpeta que el Dockerfile use en sus `COPY` — p.ej. `settings.json`, `welcome/`, `workspace/`). Excluye VCS/caches (`.git`, `__pycache__`, `*.pyc`, `node_modules`, `.DS_Store`, `.venv`) y respeta `.dockerignore` si existe.
 4. Lo sube como `code-artifact.zip` (primera vez) o `code-artifact-vN.zip`.
 5. Imprime el `s3://` URI resultante y la guía del paso 3.
+
+> **Por qué el contexto completo y no solo `Dockerfile` + `app.py`:** si el Dockerfile hace `COPY settings.json`, `COPY welcome/`, etc. y esos archivos no están en el zip, el build falla con `failed to calculate checksum ... "/<archivo>": not found`. El zip debe contener todo lo que el Dockerfile referencia, igual que el contexto de un `docker build`.
 
 ### 3. Crear o actualizar la imagen (lo corre el usuario)
 
@@ -149,6 +151,6 @@ aws lambda-microvms delete-microvm-image-version \
 
 ## Notas
 
-- El zip lleva `Dockerfile` y `app.py` en la **raíz** (no dentro de un subfolder).
+- El zip lleva el **Dockerfile en la raíz** (no dentro de un subfolder) junto con todo el contexto de build que el Dockerfile referencia en sus `COPY`.
 - `arm64` + base `al2023-1` por convención del proyecto.
 - No incrustar secretos en el artefacto: el snapshot se comparte entre MicroVMs.

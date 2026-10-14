@@ -74,11 +74,45 @@ fi
 echo "    Siguiente artefacto: $ARTIFACT"
 
 # --- 3. Empaquetar -----------------------------------------------------------
-echo "==> Empaquetando zip (Dockerfile + app.py en la raíz)..."
+# Se empaqueta TODO el contexto de build del proyecto (igual que `docker build`),
+# con el Dockerfile en la RAÍZ del zip (convención del steering). NO se usa `-j`
+# (junk paths) ni se limita a Dockerfile+app.py: el Dockerfile puede hacer
+# `COPY settings.json`, `COPY welcome/`, `COPY workspace/...`, etc., y si esos
+# archivos no están en el zip el build falla con "not found" al calcular el
+# checksum del COPY.
+#
+# Exclusiones: VCS, caches y artefactos que no son contexto de build. Si el
+# proyecto trae un .dockerignore, también se respetan sus patrones.
+echo "==> Empaquetando zip (contexto de build completo, Dockerfile en la raíz)..."
 TMP_ZIP="$(mktemp -t "${IMAGE_NAME}-XXXX").zip"
 trap 'rm -f "$TMP_ZIP"' EXIT
-( cd "$PROJECT_DIR" && zip -q -j "$TMP_ZIP" Dockerfile app.py )
+
+ZIP_EXCLUDES=(
+  '.git/*' '*/.git/*'
+  '__pycache__/*' '*/__pycache__/*' '*.pyc'
+  'node_modules/*' '*/node_modules/*'
+  '*.DS_Store' '*/.DS_Store'
+  '.venv/*' '*/.venv/*'
+)
+
+# Si hay .dockerignore, añade sus patrones (ignora comentarios y líneas vacías).
+if [[ -f "$PROJECT_DIR/.dockerignore" ]]; then
+  while IFS= read -r pat; do
+    [[ -z "$pat" || "$pat" == \#* ]] && continue
+    ZIP_EXCLUDES+=("$pat" "${pat%/}/*")
+  done < "$PROJECT_DIR/.dockerignore"
+fi
+
+( cd "$PROJECT_DIR" && zip -q -r "$TMP_ZIP" . -x "${ZIP_EXCLUDES[@]}" )
+
+# Verificación: el Dockerfile DEBE quedar en la raíz del zip.
+if ! unzip -l "$TMP_ZIP" | awk '{print $NF}' | grep -qx "Dockerfile"; then
+  echo "ERROR: el Dockerfile no quedó en la raíz del zip." >&2
+  exit 1
+fi
 echo "    $(du -h "$TMP_ZIP" | awk '{print $1}') -> $TMP_ZIP"
+echo "    Archivos empaquetados:"
+unzip -l "$TMP_ZIP" | awk 'NR>3 && $NF!="" && $NF!~"----" {print "      "$NF}' | head -40
 
 # --- 4. Subir ----------------------------------------------------------------
 S3_URI="${S3_PREFIX}/${ARTIFACT}"
