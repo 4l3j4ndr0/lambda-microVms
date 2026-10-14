@@ -123,7 +123,7 @@ function esc(s) {
 const KIRO_LOGO =
   "https://cdn.jsdelivr.net/gh/glincker/thesvg@main/public/icons/kiro/default.svg";
 
-function buildEmail({ name, url, password }) {
+export function buildEmail({ name, url, password }) {
   const safeName = esc(name) || "participante";
   const safeUrl = esc(url);
   const safePass = esc(password);
@@ -347,7 +347,11 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// Ejecutar main() solo cuando se corre directamente (no al importar buildEmail).
+const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+if (isMain) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
