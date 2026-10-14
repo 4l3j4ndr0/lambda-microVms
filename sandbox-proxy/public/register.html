@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="dark light" />
+<title>Kiro Day Medellín 2026 · Tu entorno</title>
+<style>
+  :root {
+    --bg: #0f0f17; --card: #1b1b2b; --border: #2b2b40;
+    --fg: #f8f8f2; --muted: #8b8ba7; --accent: #bd93f9; --accent2: #8be9fd;
+    --ok: #50fa7b; --err: #ff5555;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card {
+    width: 100%; max-width: 420px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 18px; overflow: hidden;
+  }
+  .head {
+    padding: 28px 28px 20px; text-align: center;
+    background: linear-gradient(135deg, #2a1a4a 0%, var(--card) 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  .head img { width: 56px; height: 56px; display: block; margin: 0 auto 12px; }
+  .head h1 { margin: 0; font-size: 20px; font-weight: 700; }
+  .head h1 span { color: var(--accent); }
+  .head p { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+  form { padding: 24px 28px 28px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+  input {
+    width: 100%; padding: 12px 14px; margin-bottom: 16px; font-size: 15px;
+    color: var(--fg); background: #13131f; border: 1px solid var(--border);
+    border-radius: 10px; outline: none;
+  }
+  input:focus { border-color: var(--accent); }
+  button {
+    width: 100%; padding: 14px; font-size: 16px; font-weight: 600; color: #0f0f17;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: 0; border-radius: 10px; cursor: pointer;
+  }
+  button:disabled { opacity: .6; cursor: not-allowed; }
+  .msg { margin: 16px 0 0; font-size: 14px; line-height: 1.5; text-align: center; display: none; }
+  .msg.ok { color: var(--ok); display: block; }
+  .msg.err { color: var(--err); display: block; }
+  .foot { padding: 14px 28px; border-top: 1px solid var(--border); background: #13131f;
+    text-align: center; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <img src="https://cdn.jsdelivr.net/gh/glincker/thesvg@main/public/icons/kiro/default.svg" alt="Kiro" />
+      <h1>Kiro Day <span>Medellín 2026</span></h1>
+      <p>Registrate y recibí tu entorno de desarrollo en el navegador.</p>
+    </div>
+    <form id="f">
+      <label for="name">Nombre</label>
+      <input id="name" name="name" type="text" autocomplete="name" placeholder="Tu nombre" required />
+      <label for="email">Correo</label>
+      <input id="email" name="email" type="email" autocomplete="email" placeholder="tu@correo.com" required />
+      <button id="btn" type="submit">Crear mi entorno →</button>
+      <p id="msg" class="msg"></p>
+    </form>
+    <div class="foot">Te llegará un correo con tu enlace personal 👋</div>
+  </div>
+
+<script>
+  const f = document.getElementById("f");
+  const btn = document.getElementById("btn");
+  const msg = document.getElementById("msg");
+
+  // Al cargar, preguntamos si el registro está abierto para adaptar la UI.
+  (async () => {
+    try {
+      const res = await fetch("/api/status", { cache: "no-store" });
+      const s = await res.json().catch(() => ({}));
+      if (s && s.ok && !s.open) {
+        btn.disabled = true;
+        btn.textContent = s.full ? "Cupos agotados" : "Registro cerrado";
+        msg.className = "msg err";
+        msg.textContent = s.full
+          ? "Los cupos están agotados por ahora. Acercate al equipo del evento."
+          : "El registro no está abierto en este momento.";
+      }
+    } catch (_) {
+      // Si falla el status, dejamos el form habilitado: el POST igual valida.
+    }
+  })();
+
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    msg.className = "msg";
+    btn.disabled = true;
+    btn.textContent = "Enviando…";
+
+    const name = document.getElementById("name").value.trim();
+    const email = document.getElementById("email").value.trim();
+
+    try {
+      const res = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        msg.className = "msg ok";
+        msg.textContent = data.message || "¡Listo! Revisá tu correo.";
+        btn.textContent = "Enviado ✓";
+      } else {
+        msg.className = "msg err";
+        msg.textContent = data.error || "No se pudo registrar. Intentá de nuevo.";
+        // Si está cerrado o lleno, no tiene sentido reintentar: dejamos bloqueado.
+        if (data.status === "disabled" || data.status === "full") {
+          btn.textContent = data.status === "full" ? "Cupos agotados" : "Registro cerrado";
+        } else {
+          btn.disabled = false;
+          btn.textContent = "Crear mi entorno →";
+        }
+      }
+    } catch (err) {
+      msg.className = "msg err";
+      msg.textContent = "Error de red. Revisá tu conexión e intentá de nuevo.";
+      btn.disabled = false;
+      btn.textContent = "Crear mi entorno →";
+    }
+  });
+</script>
+</body>
+</html>

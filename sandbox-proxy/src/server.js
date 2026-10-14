@@ -32,13 +32,25 @@ import http from "node:http";
 import https from "node:https";
 import tls from "node:tls";
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { resolveLabel, allLabels } from "./routes.js";
 import { ensureToken, getCachedToken } from "./tokenManager.js";
+import { handleRegister, handleStatus, queueStatus } from "./registration.js";
 
 const PORT = Number(process.env.PORT || 8443);
 const BASE_DOMAIN = process.env.BASE_DOMAIN || "sandbox.awslearn.cloud";
 const UPSTREAM_PORT = Number(process.env.SANDBOX_PORT || 8080);
+
+// Host del sitio de registro (QR -> formulario). Las requests a este host NO se
+// proxyean a una MicroVM: sirven el formulario estático y el endpoint /api/register.
+// Vive bajo el mismo árbol *.sandbox.awslearn.cloud (reusa el wildcard TLS/DNS).
+// Se intercepta ANTES de la lógica de proxy, así que no colisiona con los labels.
+const REGISTER_HOST = (process.env.REGISTER_HOST || "registro.sandbox.awslearn.cloud").toLowerCase();
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = path.resolve(__dirname, "..", "public");
 
 function log(event, extra = {}) {
   console.log(JSON.stringify({ ts: Date.now(), src: "server", event, ...extra }));
@@ -86,6 +98,26 @@ async function resolveRouteAndToken(req, onError) {
   return { label, route, token };
 }
 
+// Sirve el formulario de registro (HTML estático). Se cachea en memoria tras la
+// primera lectura; si falla, responde 500 en texto plano.
+let _formCache = null;
+function serveForm(res) {
+  try {
+    if (_formCache == null) {
+      _formCache = readFileSync(path.join(PUBLIC_DIR, "register.html"));
+    }
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-cache",
+    });
+    res.end(_formCache);
+  } catch (e) {
+    log("form_read_error", { error: String(e) });
+    res.writeHead(500, { "Content-Type": "text/plain" });
+    res.end("No se pudo cargar el formulario\n");
+  }
+}
+
 // --- Proxy HTTP manual (https.request) ---
 // Lo hacemos manual (en vez de http-proxy) para poder interceptar y reescribir
 // los headers de respuesta del upstream, en particular Set-Cookie.
@@ -93,7 +125,38 @@ async function handleRequest(req, res) {
   // Healthcheck simple
   if (req.url === "/__health") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true, labels: allLabels().length }));
+    res.end(JSON.stringify({ ok: true, labels: allLabels().length, queue: queueStatus() }));
+    return;
+  }
+
+  // --- Sitio de registro (QR -> formulario) ---
+  // Las requests al host de registro no se proxyean: sirven el formulario y el
+  // endpoint de alta. Se discrimina por Host para no colisionar con los labels.
+  const hostOnly = (req.headers.host || "").split(":")[0].toLowerCase();
+  if (hostOnly === REGISTER_HOST) {
+    if (req.method === "POST" && req.url === "/api/register") {
+      try {
+        await handleRegister(req, res);
+      } catch (e) {
+        log("register_handler_error", { error: String(e) });
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Error interno" }));
+        }
+      }
+      return;
+    }
+    if (req.method === "GET" && req.url === "/api/status") {
+      handleStatus(req, res);
+      return;
+    }
+    // GET: servir el formulario estático en "/" (y cualquier otra ruta GET).
+    if (req.method === "GET") {
+      serveForm(res);
+      return;
+    }
+    res.writeHead(405, { "Content-Type": "text/plain" });
+    res.end("Method Not Allowed\n");
     return;
   }
 

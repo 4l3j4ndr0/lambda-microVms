@@ -9,6 +9,7 @@ RUN npm install --omit=dev
 # Código
 COPY src ./src
 COPY provision ./provision
+COPY public ./public
 
 # El proxy escucha en 8443 (HTTP detrás de nginx, o HTTPS si se montan certs)
 EXPOSE 8443

@@ -40,7 +40,7 @@ cat > "$PARAMS_FILE" <<EOF
   "commands": [
     "#!/bin/bash",
     "set -e",
-    "mkdir -p ${APP_DIR} && cd ${APP_DIR} && (if [ -d source ]; then cd source && git fetch origin && git reset --hard origin/${BRANCH}; else git clone -b ${BRANCH} ${REPO} source; fi) && cd ${APP_DIR}/source/sandbox-proxy && if [ ! -f .env ]; then echo MISSING_ENV && exit 1; fi && mkdir -p data && [ -f data/routes.json ] || echo '{}' > data/routes.json && docker rm -f ${CONTAINER_NAME} 2>/dev/null || true && docker build --no-cache -t ${IMAGE_TAG} . && docker run -d --name ${CONTAINER_NAME} --restart unless-stopped --env-file .env -v \$(pwd)/data:/app/data -p 127.0.0.1:${PORT}:${PORT} ${IMAGE_TAG} && echo DEPLOY_SUCCESS"
+    "mkdir -p ${APP_DIR} && cd ${APP_DIR} && (if [ -d source ]; then cd source && git fetch origin && git reset --hard origin/${BRANCH}; else git clone -b ${BRANCH} ${REPO} source; fi) && cd ${APP_DIR}/source/sandbox-proxy && if [ ! -f .env ]; then echo MISSING_ENV && exit 1; fi && mkdir -p data && [ -f data/routes.json ] || echo '{}' > data/routes.json && [ -f data/config.json ] || echo '{\"maxSandboxes\":60,\"registrationEnabled\":true}' > data/config.json && docker rm -f ${CONTAINER_NAME} 2>/dev/null || true && docker build --no-cache -t ${IMAGE_TAG} . && docker run -d --name ${CONTAINER_NAME} --restart unless-stopped --env-file .env -v \$(pwd)/data:/app/data -p 127.0.0.1:${PORT}:${PORT} ${IMAGE_TAG} && echo DEPLOY_SUCCESS"
   ]
 }
 EOF

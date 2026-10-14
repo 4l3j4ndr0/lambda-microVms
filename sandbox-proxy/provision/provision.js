@@ -37,30 +37,30 @@ const ACCOUNT = process.env.ACCOUNT_ID || "590183999298";
 const IMAGE = process.env.IMAGE_NAME || "kiro-sandbox";
 const IMAGE_VERSION = process.env.IMAGE_VERSION || "6.0";
 const EXEC_ROLE = `arn:aws:iam::${ACCOUNT}:role/MicroVMExecutionRole`;
-const BASE_DOMAIN = process.env.BASE_DOMAIN || "sandbox.awslearn.cloud";
+export const BASE_DOMAIN = process.env.BASE_DOMAIN || "sandbox.awslearn.cloud";
 const ROUTES_FILE = process.env.ROUTES_FILE
   ? path.resolve(process.env.ROUTES_FILE)
   : path.resolve(process.cwd(), "routes.json");
 const SES_FROM = process.env.SES_FROM || "no-reply@awslearn.cloud";
 // Password de code-server (fijo en la imagen por ahora; igual que en app.py).
 // Cuando se parametrice por participante, vendrá por runHookPayload.
-const PASSWORD = process.env.SANDBOX_PASSWORD || "microvm2026";
+export const PASSWORD = process.env.SANDBOX_PASSWORD || "microvm2026";
 
 const IMAGE_ARN = `arn:aws:lambda:${REGION}:${ACCOUNT}:microvm-image:${IMAGE}`;
 
-const mvm = new LambdaMicrovmsClient({ region: REGION });
+export const mvm = new LambdaMicrovmsClient({ region: REGION });
 const ses = new SESv2Client({ region: REGION });
 
-function log(event, extra = {}) {
+export function log(event, extra = {}) {
   console.log(JSON.stringify({ ts: Date.now(), src: "provision", event, ...extra }));
 }
 
-function randomLabel() {
+export function randomLabel() {
   // 7 chars alfanuméricos en minúscula; sirve como subdominio y como secreto.
   return randomBytes(8).toString("hex").slice(0, 7);
 }
 
-function loadRoutes() {
+export function loadRoutes() {
   if (!existsSync(ROUTES_FILE)) return {};
   try {
     return JSON.parse(readFileSync(ROUTES_FILE, "utf8") || "{}");
@@ -69,7 +69,7 @@ function loadRoutes() {
   }
 }
 
-function saveRoutes(routes) {
+export function saveRoutes(routes) {
   // Escritura atómica: escribir a un temporal en el MISMO directorio y luego
   // rename (operación atómica en el mismo filesystem). Evita que el proxy lea
   // un JSON a medio escribir. El rename cambia el inode, pero como se monta el
@@ -80,7 +80,7 @@ function saveRoutes(routes) {
   renameSync(tmp, ROUTES_FILE);
 }
 
-async function runMicrovm() {
+export async function runMicrovm() {
   const res = await mvm.send(
     new RunMicrovmCommand({
       imageIdentifier: IMAGE_ARN,
@@ -97,7 +97,7 @@ async function runMicrovm() {
   return { microvmId: res.microvmId, endpoint: res.endpoint, state: res.state };
 }
 
-async function waitRunning(microvmId, timeoutMs = 180000) {
+export async function waitRunning(microvmId, timeoutMs = 180000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const res = await mvm.send(new GetMicrovmCommand({ microvmIdentifier: microvmId }));
@@ -265,7 +265,7 @@ export function buildEmail({ name, url, password }) {
   return { subject, text, html };
 }
 
-async function sendEmail({ name, email, url }) {
+export async function sendEmail({ name, email, url }) {
   const { subject, text, html } = buildEmail({ name, url, password: PASSWORD });
   await ses.send(
     new SendEmailCommand({
@@ -281,7 +281,7 @@ async function sendEmail({ name, email, url }) {
   );
 }
 
-async function provisionOne({ name, email }) {
+export async function provisionOne({ name, email }) {
   log("provision_start", { email, name });
   const { microvmId, endpoint } = await runMicrovm();
   log("microvm_created", { microvmId, endpoint });
