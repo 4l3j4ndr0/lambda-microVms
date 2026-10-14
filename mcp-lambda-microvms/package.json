@@ -1,0 +1,21 @@
+{
+  "name": "mcp-lambda-microvms",
+  "version": "0.1.0",
+  "description": "Servidor MCP (local, stdio) para operar AWS Lambda MicroVMs: tools genéricas sobre la API lambda-microvms + tools específicas del Kiro Day (config/fleet vía SSM).",
+  "type": "module",
+  "bin": {
+    "mcp-lambda-microvms": "src/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@aws-sdk/client-lambda-microvms": "^3.1146.0",
+    "@aws-sdk/client-ssm": "^3.1146.0",
+    "zod": "^3.23.0"
+  }
+}

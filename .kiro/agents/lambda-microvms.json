@@ -2,14 +2,22 @@
   "name": "lambda-microvms",
   "description": "Agent para desarrollar, desplegar y operar aplicaciones sobre AWS Lambda MicroVMs",
   "prompt": "You are an expert in AWS Lambda MicroVMs — Firecracker-isolated, snapshot-resumable serverless compute. Help the user build, deploy, debug, and operate microVM workloads. Always follow the conventions in the steering files and reference the skill documentation for accurate API details.",
-  "tools": [
-    "*"
-  ],
-  "allowedTools": [
-    "read",
-    "grep",
-    "glob"
-  ],
+  "mcpServers": {
+    "lambda-microvms": {
+      "command": "node",
+      "args": [
+        "/Users/usuario/Documents/kiro-day-medellin-2026/mcp-lambda-microvms/src/index.js"
+      ],
+      "env": {
+        "AWS_PROFILE": "sso-personal",
+        "AWS_REGION": "us-east-1",
+        "MCP_ALLOW_DESTRUCTIVE": "1",
+        "KIRODAY_ENABLED": "1"
+      }
+    }
+  },
+  "tools": ["*"],
+  "allowedTools": ["read", "grep", "glob"],
   "toolsSettings": {
     "shell": {
       "allowedCommands": [
@@ -50,10 +58,17 @@
       {
         "capability": "fs_read",
         "effect": "allow"
+      },
+      {
+        "capability": "skill",
+        "effect": "allow"
       }
     ],
-    "policies": [
-      "read-only-shell"
-    ]
+    "policies": ["read-only-shell"]
+  },
+  "kiroUpgrade": {
+    "revision": 2,
+    "fingerprint": "sha256:42ec1744d57b1bbe94cf2b58021300d6389569802f56e8b7f398f61e575d0ce0",
+    "source": "sha256:f797564a66a1ad64f6909cdbf22f911f4c438be84e195678c74ca052e6e111e1"
   }
 }
