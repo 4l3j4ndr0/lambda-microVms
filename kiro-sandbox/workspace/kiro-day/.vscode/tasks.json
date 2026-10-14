@@ -4,18 +4,35 @@
     {
       "label": "Terminal de bienvenida",
       "type": "shell",
-      "command": "bash -l",
+      "command": "bash",
+      "args": ["--rcfile", "/root/.bashrc", "-i"],
+      "isBackground": true,
       "presentation": {
         "reveal": "always",
         "panel": "dedicated",
         "focus": true,
         "showReuseMessage": false,
-        "clear": true
+        "clear": true,
+        "close": false
       },
       "runOptions": {
         "runOn": "folderOpen"
       },
-      "problemMatcher": []
+      "problemMatcher": {
+        "pattern": [
+          {
+            "regexp": ".",
+            "file": 1,
+            "location": 2,
+            "message": 3
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "."
+        }
+      }
     }
   ]
 }

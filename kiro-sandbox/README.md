@@ -69,9 +69,13 @@ La imagen viene preconfigurada para que el participante no tenga que ajustar nad
   Dracula + iconos Material. Para agregar más, añade una línea y reconstruye.
 - **Tema por defecto** vía `settings.json` (`workbench.colorTheme`, `workbench.iconTheme`).
 - **Workspace inicial `kiro-day`**: `app.py` arranca code-server abriendo esa carpeta.
-- **Terminal de bienvenida**: un task `runOn: folderOpen` (`.vscode/tasks.json` del
-  workspace) abre una terminal automáticamente y `.bashrc` imprime el banner con el
-  comando `kiro-cli login --use-device-flow`.
+- **README de bienvenida en preview**: `workbench.startupEditor: readme` abre el
+  `kiro-day/README.md` renderizado al arrancar (logo de Kiro + pasos de login).
+- **Terminal automática con banner**: un task `runOn: folderOpen` abre una terminal
+  al cargar y el perfil de terminal arranca bash con `--rcfile /root/.bashrc`, que
+  imprime el banner de bienvenida.
+- **Chat de IA deshabilitado** (`chat.disableAIFeatures`): el panel de Copilot no se
+  auto-abre; en el workshop se usa **Kiro CLI por terminal**.
 
 ## Variables
 

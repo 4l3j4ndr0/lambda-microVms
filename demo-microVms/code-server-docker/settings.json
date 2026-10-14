@@ -1,11 +1,19 @@
 {
   "workbench.colorTheme": "Dracula Theme",
   "workbench.iconTheme": "material-icon-theme",
-  "workbench.startupEditor": "none",
+  "workbench.startupEditor": "readme",
   "editor.fontFamily": "Menlo, Monaco, 'Courier New', monospace",
   "editor.fontSize": 14,
   "editor.minimap.enabled": false,
   "terminal.integrated.fontSize": 13,
   "security.workspace.trust.enabled": false,
-  "task.allowAutomaticTasks": "on"
+  "chat.disableAIFeatures": true,
+  "task.allowAutomaticTasks": "on",
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.profiles.linux": {
+    "bash": {
+      "path": "bash",
+      "args": ["--rcfile", "/home/coder/.bashrc"]
+    }
+  }
 }

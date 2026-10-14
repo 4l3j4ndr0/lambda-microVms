@@ -27,3 +27,7 @@ demo-microVms/microvms.json
 # Artefactos de build de la imagen MicroVM
 **/kiro-sandbox.zip
 **/code-artifact*.zip
+
+# Python bytecode
+**/__pycache__/
+*.pyc
