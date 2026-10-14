@@ -27,6 +27,7 @@ import {
   generatePassword,
   mvm,
   BASE_DOMAIN,
+  PASSWORD,
   PLATFORM_MAX_DURATION_SECONDS,
 } from "../provision/provision.js";
 
@@ -262,17 +263,22 @@ export async function ensureSandbox({ name, email, sendMail = true }) {
   // desde el MCP), no del .env. El password es único por sandbox (CSPRNG) y se
   // entrega a la VM por runHookPayload; el mismo valor va al email.
   const password = generatePassword();
-  const { microvmId, endpoint } = await runMicrovm({
+  const { microvmId, endpoint, passwordApplied } = await runMicrovm({
     imageVersion,
     maxDurationSeconds: sandboxMaxDurationSeconds,
     password,
   });
+  // Password efectivo del sandbox: si la imagen tiene hook /run, se aplicó el
+  // aleatorio; si no, la VM quedó con el placeholder fijo de la imagen. El email
+  // y routes.json deben reflejar el que REALMENTE funciona.
+  const effectivePassword = passwordApplied ? password : PASSWORD;
   log("microvm_created", {
     microvmId,
     endpoint,
     email: cleanEmail,
     imageVersion,
     sandboxMaxDurationSeconds,
+    passwordApplied,
   });
   await waitRunning(microvmId);
   log("microvm_running", { microvmId });
@@ -307,14 +313,14 @@ export async function ensureSandbox({ name, email, sendMail = true }) {
     endpoint,
     email: cleanEmail,
     name: name || null,
-    password,
+    password: effectivePassword,
     createdAt: Date.now(),
   };
   saveRoutes(routes);
   log("route_written", { label, url, email: cleanEmail });
 
   if (sendMail) {
-    await sendEmail({ name, email: cleanEmail, url, password });
+    await sendEmail({ name, email: cleanEmail, url, password: effectivePassword });
     log("email_sent", { email: cleanEmail, label });
   }
 

@@ -29,6 +29,7 @@ import {
   LambdaMicrovmsClient,
   RunMicrovmCommand,
   GetMicrovmCommand,
+  GetMicrovmImageVersionCommand,
 } from "@aws-sdk/client-lambda-microvms";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
@@ -107,6 +108,38 @@ export function saveRoutes(routes) {
 // Tope de la plataforma para la vida máxima de una MicroVM (8 h en segundos).
 export const PLATFORM_MAX_DURATION_SECONDS = 28800;
 
+// Cache por versión de imagen: ¿tiene el hook /run habilitado? Consultar
+// GetMicrovmImageVersion una vez por versión y recordarlo, para no pegarle a la
+// API en cada creación. Map<version, boolean>.
+const _runHookCache = new Map();
+
+/**
+ * ¿La versión de imagen dada tiene el hook /run habilitado? Si no lo tiene, pasar
+ * runHookPayload hace que RunMicrovm falle con ValidationException. Devuelve false
+ * ante cualquier duda/error (fallback seguro: no mandar el payload).
+ */
+export async function imageHasRunHook(version) {
+  if (_runHookCache.has(version)) return _runHookCache.get(version);
+  let enabled = false;
+  try {
+    const res = await mvm.send(
+      new GetMicrovmImageVersionCommand({
+        imageIdentifier: IMAGE_ARN,
+        imageVersion: version,
+      })
+    );
+    // hooks.microvmHooks.run === "ENABLED" (o null/ausente si no se configuró).
+    const run = res?.hooks?.microvmHooks?.run;
+    enabled = run === "ENABLED";
+  } catch (e) {
+    log("image_hooks_check_failed", { version, error: String(e) });
+    enabled = false;
+  }
+  _runHookCache.set(version, enabled);
+  log("image_run_hook", { version, enabled });
+  return enabled;
+}
+
 export async function runMicrovm({ imageVersion, maxDurationSeconds, password } = {}) {
   // La versión efectiva: la que pase el llamador (p.ej. fleet.js leyendo
   // config.json en caliente) o, si no, el default del .env/constante.
@@ -134,11 +167,23 @@ export async function runMicrovm({ imageVersion, maxDurationSeconds, password } 
   // Password único por sandbox: se entrega al hook /run como body (runHookPayload),
   // que reconfigura code-server con él. NO viaja en env vars (quedarían en el
   // snapshot, iguales para todas las VMs). El mismo valor va al email.
-  if (password) {
+  //
+  // SOLO se manda si la imagen tiene el hook /run habilitado: con una imagen sin
+  // hooks, pasar runHookPayload hace fallar RunMicrovm con ValidationException. Si
+  // no hay hook, se omite y la VM arranca con el password placeholder de la imagen
+  // (fallback). Al recrear la imagen con hooks, esto se activa solo (sin deploy).
+  let passwordApplied = false;
+  if (password && (await imageHasRunHook(version))) {
     cmd.runHookPayload = JSON.stringify({ password });
+    passwordApplied = true;
   }
   const res = await mvm.send(new RunMicrovmCommand(cmd));
-  return { microvmId: res.microvmId, endpoint: res.endpoint, state: res.state };
+  return {
+    microvmId: res.microvmId,
+    endpoint: res.endpoint,
+    state: res.state,
+    passwordApplied,
+  };
 }
 
 export async function waitRunning(microvmId, timeoutMs = 180000) {
@@ -332,8 +377,9 @@ export async function sendEmail({ name, email, url, password }) {
 export async function provisionOne({ name, email }) {
   log("provision_start", { email, name });
   const password = generatePassword();
-  const { microvmId, endpoint } = await runMicrovm({ password });
-  log("microvm_created", { microvmId, endpoint });
+  const { microvmId, endpoint, passwordApplied } = await runMicrovm({ password });
+  const effectivePassword = passwordApplied ? password : PASSWORD;
+  log("microvm_created", { microvmId, endpoint, passwordApplied });
 
   await waitRunning(microvmId);
   log("microvm_running", { microvmId });
@@ -347,7 +393,7 @@ export async function provisionOne({ name, email }) {
     endpoint,
     email,
     name: name || null,
-    password,
+    password: effectivePassword,
     createdAt: Date.now(),
   };
   saveRoutes(routes);
@@ -356,7 +402,7 @@ export async function provisionOne({ name, email }) {
   if (process.env.SKIP_EMAIL === "1") {
     log("email_skipped", { email });
   } else {
-    await sendEmail({ name, email, url, password });
+    await sendEmail({ name, email, url, password: effectivePassword });
     log("email_sent", { email });
   }
 
