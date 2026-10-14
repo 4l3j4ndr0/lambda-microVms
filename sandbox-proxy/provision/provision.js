@@ -107,25 +107,163 @@ async function waitRunning(microvmId, timeoutMs = 180000) {
   throw new Error(`Timeout esperando RUNNING para ${microvmId}`);
 }
 
-async function sendEmail({ name, email, url }) {
-  const subject = "Tu sandbox del Kiro Day está listo";
-  const text =
-    `Hola ${name || ""},\n\n` +
-    `Tu ambiente sandbox para el Kiro Day ya está disponible.\n\n` +
-    `Abre esta URL en tu navegador:\n  ${url}\n\n` +
-    `Contraseña de acceso: microvm2026\n\n` +
-    `El ambiente trae VS Code en el navegador con Kiro CLI preinstalado.\n` +
-    `Dentro de un terminal puedes autenticarte con: kiro-cli login\n\n` +
-    `Nos vemos en el workshop.\n`;
-  const html =
-    `<p>Hola ${name || ""},</p>` +
-    `<p>Tu ambiente <b>sandbox</b> para el Kiro Day ya está disponible.</p>` +
-    `<p>Abre esta URL en tu navegador:<br><a href="${url}">${url}</a></p>` +
-    `<p>Contraseña de acceso: <code>microvm2026</code></p>` +
-    `<p>El ambiente trae VS Code en el navegador con <b>Kiro CLI</b> preinstalado. ` +
-    `Dentro de un terminal: <code>kiro-cli login</code>.</p>` +
-    `<p>Nos vemos en el workshop.</p>`;
+// Escapa texto para interpolar de forma segura dentro de HTML.
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
+const KIRO_LOGO =
+  "https://cdn.jsdelivr.net/gh/glincker/thesvg@main/public/icons/kiro/default.svg";
+
+function buildEmail({ name, url, password }) {
+  const safeName = esc(name) || "participante";
+  const safeUrl = esc(url);
+  const safePass = esc(password);
+  const subject = "Tu entorno del Kiro Day Medellín 2026 está listo 🚀";
+
+  // Versión texto plano (fallback para clientes sin HTML).
+  const text =
+    `Hola ${name || "participante"},\n\n` +
+    `Tu entorno de desarrollo para el Kiro Day Medellín 2026 ya está listo.\n\n` +
+    `Ábrelo en tu navegador:\n  ${url}\n\n` +
+    `Contraseña de acceso: ${password}\n\n` +
+    `El entorno trae VS Code en el navegador con Kiro CLI preinstalado.\n` +
+    `Para autenticar Kiro, abre un terminal y ejecuta: kiro-cli login\n\n` +
+    `Consejos:\n` +
+    `  • Úsalo desde un navegador moderno (Chrome, Edge, Firefox).\n` +
+    `  • Tu entorno es personal: no compartas la URL ni la contraseña.\n\n` +
+    `Nos vemos en el workshop.\n` +
+    `— Equipo Kiro Day Medellín 2026\n`;
+
+  // Versión HTML: tablas + estilos inline (compatibilidad Gmail/Outlook).
+  const html = `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light dark" />
+<title>${subject}</title>
+</head>
+<body style="margin:0;padding:0;background:#0f0f17;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f17;padding:24px 12px;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1b1b2b;border:1px solid #2b2b40;border-radius:16px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+
+        <!-- Header -->
+        <tr>
+          <td style="padding:28px 32px 20px 32px;background:linear-gradient(135deg,#2a1a4a 0%,#1b1b2b 100%);border-bottom:1px solid #2b2b40;">
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="vertical-align:middle;padding-right:12px;">
+                  <img src="${KIRO_LOGO}" alt="Kiro" width="36" height="36" style="display:block;border:0;" />
+                </td>
+                <td style="vertical-align:middle;">
+                  <div style="font-size:20px;font-weight:700;color:#ffffff;line-height:1.2;">Kiro Day <span style="color:#bd93f9;">Medell&iacute;n 2026</span></div>
+                  <div style="font-size:13px;color:#8b8ba7;margin-top:2px;">Tu entorno de desarrollo est&aacute; listo</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:28px 32px 8px 32px;">
+            <p style="margin:0 0 14px 0;font-size:16px;color:#f8f8f2;">Hola <strong>${safeName}</strong>,</p>
+            <p style="margin:0 0 20px 0;font-size:15px;line-height:1.6;color:#c7c7d9;">
+              Ya tienes tu <strong style="color:#f8f8f2;">sandbox personal</strong> para el workshop: un
+              <strong style="color:#50fa7b;">VS Code</strong> completo en el navegador con
+              <strong style="color:#8be9fd;">Kiro CLI</strong> preinstalado. Sin instalar nada en tu equipo.
+            </p>
+          </td>
+        </tr>
+
+        <!-- CTA -->
+        <tr>
+          <td align="center" style="padding:4px 32px 24px 32px;">
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="border-radius:10px;background:linear-gradient(135deg,#bd93f9,#8be9fd);">
+                  <a href="${safeUrl}" target="_blank"
+                     style="display:inline-block;padding:14px 32px;font-size:16px;font-weight:600;color:#0f0f17;text-decoration:none;border-radius:10px;">
+                    Abrir mi entorno &rarr;
+                  </a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:12px 0 0 0;font-size:12px;color:#6272a4;word-break:break-all;">
+              o copia este enlace:<br />
+              <a href="${safeUrl}" target="_blank" style="color:#8be9fd;text-decoration:none;">${safeUrl}</a>
+            </p>
+          </td>
+        </tr>
+
+        <!-- Credenciales -->
+        <tr>
+          <td style="padding:0 32px 24px 32px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#13131f;border:1px solid #2b2b40;border-radius:12px;">
+              <tr>
+                <td style="padding:16px 20px;">
+                  <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.6px;color:#6272a4;margin-bottom:6px;">Contrase&ntilde;a de acceso</div>
+                  <div style="font-size:18px;font-weight:700;color:#50fa7b;font-family:'SF Mono',Menlo,Consolas,monospace;letter-spacing:0.5px;">${safePass}</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Siguiente paso -->
+        <tr>
+          <td style="padding:0 32px 24px 32px;">
+            <p style="margin:0 0 8px 0;font-size:14px;color:#c7c7d9;line-height:1.6;">
+              Dentro del editor, abre un <strong style="color:#f8f8f2;">terminal</strong> y autentica Kiro:
+            </p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0d0d16;border:1px solid #2b2b40;border-radius:10px;">
+              <tr>
+                <td style="padding:12px 16px;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:14px;color:#8be9fd;">
+                  <span style="color:#6272a4;">$</span> kiro-cli login
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Nota de seguridad -->
+        <tr>
+          <td style="padding:0 32px 28px 32px;">
+            <p style="margin:0;font-size:12px;color:#6272a4;line-height:1.6;">
+              🔒 Tu entorno es personal. No compartas la URL ni la contrase&ntilde;a. Usa un navegador moderno (Chrome, Edge o Firefox).
+            </p>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:18px 32px;background:#13131f;border-top:1px solid #2b2b40;">
+            <p style="margin:0;font-size:12px;color:#6272a4;text-align:center;">
+              Kiro Day Medell&iacute;n 2026 &middot; Nos vemos en el workshop 👋
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>`;
+
+  return { subject, text, html };
+}
+
+async function sendEmail({ name, email, url }) {
+  const { subject, text, html } = buildEmail({ name, url, password: PASSWORD });
   await ses.send(
     new SendEmailCommand({
       FromEmailAddress: SES_FROM,
