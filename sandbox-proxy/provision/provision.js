@@ -35,7 +35,7 @@ import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 const REGION = process.env.AWS_REGION || "us-east-1";
 const ACCOUNT = process.env.ACCOUNT_ID || "590183999298";
 const IMAGE = process.env.IMAGE_NAME || "kiro-sandbox";
-const IMAGE_VERSION = process.env.IMAGE_VERSION || "1.0";
+const IMAGE_VERSION = process.env.IMAGE_VERSION || "6.0";
 const EXEC_ROLE = `arn:aws:iam::${ACCOUNT}:role/MicroVMExecutionRole`;
 const BASE_DOMAIN = process.env.BASE_DOMAIN || "sandbox.awslearn.cloud";
 const ROUTES_FILE = process.env.ROUTES_FILE
@@ -133,7 +133,7 @@ function buildEmail({ name, url, password }) {
     `Ábrelo en tu navegador:\n  ${url}\n\n` +
     `Contraseña de acceso: ${password}\n\n` +
     `El entorno trae VS Code en el navegador con Kiro CLI preinstalado.\n` +
-    `Para autenticar Kiro, abre un terminal y ejecuta: kiro-cli login\n\n` +
+    `Para autenticar Kiro, abre un terminal y ejecuta: kiro-cli login --use-device-flow\n\n` +
     `Consejos:\n` +
     `  • Úsalo desde un navegador moderno (Chrome, Edge, Firefox).\n` +
     `  • Tu entorno es personal: no compartas la URL ni la contraseña.\n\n` +
@@ -227,7 +227,7 @@ function buildEmail({ name, url, password }) {
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0d0d16;border:1px solid #2b2b40;border-radius:10px;">
               <tr>
                 <td style="padding:12px 16px;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:14px;color:#8be9fd;">
-                  <span style="color:#6272a4;">$</span> kiro-cli login
+                  <span style="color:#6272a4;">$</span> kiro-cli login --use-device-flow
                 </td>
               </tr>
             </table>
