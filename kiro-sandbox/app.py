@@ -17,6 +17,45 @@ def log(event, **kwargs):
     print(json.dumps({"ts": time.time(), "event": event, **kwargs}), flush=True)
 
 
+def _extract_password(payload):
+    """Extrae el password del body de /run.
+
+    Formato OFICIAL del body (confirmado con el hook.py de ejemplo de AWS,
+    anysphere/aws-lambda-workers): la plataforma envía
+        {"microvmId": "...", "runHookPayload": "<tu-blob-como-STRING>"}
+    es decir, el blob opaco que pasaste a RunMicrovm llega bajo la clave
+    "runHookPayload" y como STRING, hay que json.loads() de nuevo. Nosotros
+    pusimos ahí '{"password":"..."}'.
+
+    Se mantiene tolerancia a otras formas (raíz directa, payload/body/data) por
+    robustez ante cambios de la plataforma. Devuelve el password o None."""
+    if payload is None:
+        return None
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:  # noqa: BLE001
+            return None
+    if not isinstance(payload, dict):
+        return None
+    # Camino oficial + alternativas: el blob puede estar anidado como string.
+    for key in ("runHookPayload", "payload", "body", "data"):
+        inner = payload.get(key)
+        if inner is None:
+            continue
+        if isinstance(inner, str):
+            try:
+                inner = json.loads(inner)
+            except Exception:  # noqa: BLE001
+                continue
+        if isinstance(inner, dict) and isinstance(inner.get("password"), str):
+            return inner["password"]
+    # Fallback: password directo en la raíz del body.
+    if isinstance(payload.get("password"), str):
+        return payload["password"]
+    return None
+
+
 # Write bashrc so all terminals (incl. code-server integrated terminals) get
 # Kiro CLI on PATH, and show the welcome banner on interactive shells.
 # NOTE: this file is rewritten on every boot, so the welcome hook must live here
@@ -102,20 +141,32 @@ def validate():
 
 @hooks.post(f"{P}/run")
 def run():
-    """Fires once post-resume. Recibe el password único de este sandbox en el body
-    (runHookPayload) y reinicia code-server con él. Es rápido (reinicio de un
-    proceso local), dentro del timeout del hook /run."""
+    """Fires once post-resume. La plataforma entrega el runHookPayload en el body
+    del POST (y además inyecta microvmId). El blob puede venir como JSON crudo en
+    la raíz, o anidado/serializado según cómo lo envuelva la plataforma, así que
+    buscamos el password de forma defensiva. Reinicia code-server con él."""
     password = None
+    raw = request.get_data(as_text=True) or ""
     try:
-        payload = request.get_json(force=True, silent=True) or {}
-        password = payload.get("password")
+        payload = request.get_json(force=True, silent=True)
+        if payload is None and raw:
+            payload = json.loads(raw)
+        password = _extract_password(payload)
     except Exception as e:  # noqa: BLE001
         log("hook_run_payload_error", error=str(e))
+
+    # Log de diagnóstico SIN exponer el password: solo las claves y el tipo.
+    try:
+        if isinstance(payload, dict):
+            log("hook_run_payload_shape", keys=sorted(payload.keys()), type="dict")
+        else:
+            log("hook_run_payload_shape", type=type(payload).__name__, raw_len=len(raw))
+    except Exception:  # noqa: BLE001
+        pass
 
     if password:
         try:
             start_code_server(password)
-            # No logueamos el password (secreto); solo que se aplicó.
             log("hook_run", password_applied=True)
         except Exception as e:  # noqa: BLE001
             log("hook_run_restart_failed", error=str(e))
