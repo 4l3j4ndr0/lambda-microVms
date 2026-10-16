@@ -32,13 +32,14 @@ import http from "node:http";
 import https from "node:https";
 import tls from "node:tls";
 import { readFileSync } from "node:fs";
+import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveLabel, allLabels } from "./routes.js";
 import { ensureToken, getCachedToken } from "./tokenManager.js";
 import { handleRegister, handleStatus, queueStatus } from "./registration.js";
-import { getConfig } from "./fleet.js";
+import { getConfig, reconcileRoutes } from "./fleet.js";
 
 const PORT = Number(process.env.PORT || 8443);
 const BASE_DOMAIN = process.env.BASE_DOMAIN || "sandbox.awslearn.cloud";
@@ -50,11 +51,27 @@ const UPSTREAM_PORT = Number(process.env.SANDBOX_PORT || 8080);
 // Se intercepta ANTES de la lógica de proxy, así que no colisiona con los labels.
 const REGISTER_HOST = (process.env.REGISTER_HOST || "registro.sandbox.awslearn.cloud").toLowerCase();
 
+// API key del endpoint interno de reconciliación (/__reconcile). El disparo lo
+// hace EventBridge Scheduler (cron: minuto 2 de cada hora) vía API destination,
+// que inyecta este secreto en el header X-Reconcile-Key. Si no está definida, el
+// endpoint queda DESHABILITADO (fallback seguro: nunca abierto sin secreto).
+const RECONCILE_KEY = process.env.RECONCILE_KEY || "";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, "..", "public");
 
 function log(event, extra = {}) {
   console.log(JSON.stringify({ ts: Date.now(), src: "server", event, ...extra }));
+}
+
+// Compara dos strings en tiempo constante para no filtrar el secreto por timing.
+// Devuelve false si alguno está vacío o difieren en longitud.
+function safeKeyEqual(a, b) {
+  if (!a || !b) return false;
+  const ba = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ba.length !== bb.length) return false;
+  return timingSafeEqual(ba, bb);
 }
 
 // Extrae el label del Host: "sa7s6a7.sandbox.awslearn.cloud" -> "sa7s6a7"
@@ -134,6 +151,36 @@ async function handleRequest(req, res) {
         config: getConfig(),
       })
     );
+    return;
+  }
+
+  // --- Reconciliación interna (disparada por EventBridge Scheduler) ---
+  // Limpia de routes.json los sandboxes cuya MicroVM ya terminó (TTL/idle). Se
+  // protege con una API key en el header X-Reconcile-Key que inyecta la API
+  // destination de EventBridge. Sin RECONCILE_KEY configurada, queda deshabilitado.
+  if (req.url === "/__reconcile") {
+    if (req.method !== "POST") {
+      res.writeHead(405, { "Content-Type": "text/plain" });
+      res.end("Method Not Allowed\n");
+      return;
+    }
+    if (!RECONCILE_KEY || !safeKeyEqual(req.headers["x-reconcile-key"], RECONCILE_KEY)) {
+      // Mismo cuerpo para 'sin key configurada' y 'key inválida': no revelar cuál.
+      res.writeHead(403, { "Content-Type": "text/plain" });
+      res.end("forbidden\n");
+      log("reconcile_forbidden", { hasKey: Boolean(RECONCILE_KEY) });
+      return;
+    }
+    try {
+      const result = await reconcileRoutes();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, ...result }));
+      log("reconcile_done", result);
+    } catch (e) {
+      log("reconcile_error", { error: String(e) });
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "reconcile_failed" }));
+    }
     return;
   }
 

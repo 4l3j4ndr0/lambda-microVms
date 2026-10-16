@@ -15,7 +15,10 @@
 import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import path from "node:path";
 
-import { TerminateMicrovmCommand } from "@aws-sdk/client-lambda-microvms";
+import {
+  TerminateMicrovmCommand,
+  GetMicrovmCommand,
+} from "@aws-sdk/client-lambda-microvms";
 
 import {
   loadRoutes,
@@ -371,6 +374,61 @@ export async function teardownByEmail(email) {
     throw err;
   }
   return teardown(found.label);
+}
+
+// --- Reconciliación (limpia rutas huérfanas) ---------------------------------
+
+/**
+ * Reconcilia routes.json contra el estado real en AWS: borra las entradas cuya
+ * MicroVM ya no está viva (TERMINATED/TERMINATING, o ya no existe). Cubre el caso
+ * que teardown() NO cubre: sandboxes que la plataforma termina por su cuenta al
+ * vencer el TTL duro (maximumDurationInSeconds) o la idle policy. Sin esto, esas
+ * entradas quedan huérfanas en routes.json y el proxy devuelve 404/errores al
+ * resolverlas.
+ *
+ * Pensada para dispararse periódicamente (EventBridge Scheduler -> POST
+ * /__reconcile). Idempotente y segura ante altas concurrentes: recarga el archivo
+ * justo antes de escribir y solo borra los labels confirmados como muertos.
+ *
+ * Devuelve { checked, removed: [labels] }.
+ */
+export async function reconcileRoutes() {
+  const entries = Object.entries(loadRoutes());
+  const removed = [];
+
+  for (const [label, route] of entries) {
+    try {
+      const res = await mvm.send(
+        new GetMicrovmCommand({ microvmIdentifier: route.microvmId })
+      );
+      if (res.state === "TERMINATED" || res.state === "TERMINATING") {
+        removed.push(label);
+      }
+    } catch (e) {
+      // Si la VM ya no existe, la entrada es huérfana: también se limpia.
+      if (e.name === "ResourceNotFoundException") {
+        removed.push(label);
+      } else {
+        // Error transitorio (throttling, red): no borrar, reintentar al próximo ciclo.
+        log("reconcile_get_failed", {
+          label,
+          microvmId: route.microvmId,
+          error: String(e),
+        });
+      }
+    }
+  }
+
+  if (removed.length) {
+    // Recargar JUSTO antes de escribir para no pisar sandboxes creados mientras
+    // iterábamos (el ensureSandbox corre en paralelo con este barrido).
+    const fresh = loadRoutes();
+    for (const label of removed) delete fresh[label];
+    saveRoutes(fresh);
+    log("routes_reconciled", { removed });
+  }
+
+  return { checked: entries.length, removed };
 }
 
 // --- Utilidades --------------------------------------------------------------
