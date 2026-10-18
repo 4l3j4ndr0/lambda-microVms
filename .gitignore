@@ -31,3 +31,6 @@ demo-microVms/microvms.json
 # Python bytecode
 **/__pycache__/
 *.pyc
+
+# .kiro generado por los scripts del workshop (los asistentes lo crean en vivo)
+kiro-sandbox/workspace/kiro-day/.kiro/
