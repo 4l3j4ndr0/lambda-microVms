@@ -149,4 +149,4 @@ explain "Tenemos un equipo completo. Pero a veces un dev necesita conocimiento" 
   "experto puntual (p. ej. cómo modelar ventas en DynamoDB) sin cargarlo" \
   "siempre. Para eso están las Skills." \
   "" \
-  "➡  Siguiente: ./scripts/04-skills.sh (conocimiento experto bajo demanda)"
+  "➡  Siguiente: ./scripts/04-orquestador.sh (el orquestador: sub-agents)"

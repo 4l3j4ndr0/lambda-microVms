@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ACTO 7 — "Seguridad: ¿qué puede y qué NO puede hacer el equipo?" (Permisos)
+# ACTO 8 — "Seguridad: ¿qué puede y qué NO puede hacer el equipo?" (Permisos)
 # =============================================================================
 # Historia: nuestro equipo ya escribe archivos y ejecuta comandos. Eso es
 # poderoso… y peligroso. Para el POS queremos un "operador de despliegue" que
@@ -16,7 +16,7 @@
 
 source "$(dirname "$0")/lib/common.sh"
 
-title "ACTO 7 — Seguridad: un agente con permisos quirúrgicos"
+title "ACTO 8 — Seguridad: un agente con permisos quirúrgicos"
 
 story "Dónde vamos" \
   "Para publicar el POS creamos un 'operador de despliegue': deploy-ops." \
@@ -189,9 +189,9 @@ explain "Controlarlo en vivo (CLI v3)" \
 warn "Regla de oro: MÍNIMO privilegio. Deniega lo peligroso, permite lo" \
      "    cotidiano, y deja que el resto pregunte."
 
-title "Acto 7 completado ✅"
+title "Acto 8 completado ✅"
 explain "Ahora el equipo es poderoso Y acotado: deploy-ops solo puede desplegar," \
   "no destruir. Con piezas y seguridad listas, podemos EMPAQUETAR todo para" \
   "reusarlo o compartirlo: los Powers." \
   "" \
-  "➡  Siguiente: ./scripts/08-powers.sh (empaquetar y compartir el equipo)"
+  "➡  Siguiente: ./scripts/09-powers.sh (empaquetar y compartir el equipo)"

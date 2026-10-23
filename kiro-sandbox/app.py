@@ -60,9 +60,23 @@ def _extract_password(payload):
 # Kiro CLI on PATH, and show the welcome banner on interactive shells.
 # NOTE: this file is rewritten on every boot, so the welcome hook must live here
 # (not baked only via Dockerfile, which this would overwrite).
+#
+# KIRO_API_KEY: cuando está seteada, kiro-cli se salta el login del navegador
+# (modo headless/no-interactive). Para el taller la inyectamos en build-time (el
+# script de empaquetado la escribe aquí antes de subir el artefacto) para que los
+# asistentes prueben `kiro-cli --v3 chat` sin autenticarse. NO se commitea el
+# valor: el repo deja el default vacío y la clave real se pone solo al empaquetar.
+# OJO: es una clave de EVENTO compartida por todas las MicroVMs (va en el
+# snapshot); rotarla tras el evento. También se puede pasar como env var en el
+# RunMicrovm.
+_KIRO_API_KEY = os.environ.get("KIRO_API_KEY", "")
 with open("/root/.bashrc", "w") as f:
+    f.write("export PATH=/root/.local/bin:/usr/local/bin:$PATH\n")
+    # Solo exportar la key si existe (en el repo queda vacía; se inyecta al
+    # empaquetar la imagen del evento). Sin key, kiro-cli usa el login normal.
+    if _KIRO_API_KEY:
+        f.write(f'export KIRO_API_KEY="{_KIRO_API_KEY}"\n')
     f.write(
-        "export PATH=/root/.local/bin:/usr/local/bin:$PATH\n"
         "# Mensaje de bienvenida Kiro Day (solo shells interactivos)\n"
         "if [[ $- == *i* ]] && [ -f /root/.welcome-terminal.sh ]; then\n"
         "  . /root/.welcome-terminal.sh\n"

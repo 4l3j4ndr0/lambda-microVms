@@ -28,12 +28,13 @@ al hacerlo vamos descubriendo **todas las features de Kiro**:
 | Estructura `.kiro/` + Settings | Montar la oficina | 0 |
 | **Steering** | Las reglas de la casa (estándares del equipo) | 1 |
 | **Custom Agents** | Los especialistas (arquitecto, backend, frontend…) | 2–3 |
-| **Skills** | Manuales de conocimiento experto bajo demanda | 4 |
-| **Hooks** | Automatización por eventos (nuestro QA) | 5 |
-| **MCP** | Conectar herramientas externas (dibujar diagramas con draw.io) | 6 |
-| **Permisos / Seguridad** | Qué puede y qué NO puede hacer el equipo | 7 |
-| **Powers** | Empaquetar y compartir el equipo (o instalar el de otros) | 8 |
-| **Specs** | De la idea a un plan: requisitos → diseño → tareas | 9 · 🔴 en vivo |
+| **Sub-agents** | El orquestador que reparte el trabajo en paralelo | 4 |
+| **Skills** | Manuales de conocimiento experto bajo demanda | 5 |
+| **Hooks** | Automatización por eventos (nuestro QA) | 6 |
+| **MCP** | Conectar herramientas externas (dibujar diagramas con draw.io) | 7 |
+| **Permisos / Seguridad** | Qué puede y qué NO puede hacer el equipo | 8 |
+| **Powers** | Empaquetar y compartir el equipo (o instalar el de otros) | 9 |
+| **Specs** | De la idea a un plan: requisitos → diseño → tareas | 10 · 🔴 en vivo |
 
 > El POS es la excusa narrativa. El objetivo real es que al final tengas creado
 > y entendido **todo el arsenal de configuración de Kiro**.
@@ -81,6 +82,14 @@ chmod +x scripts/*.sh
 > que corran de corrido, antepón `WORKSHOP_NOWAIT=1`:
 > ```bash
 > WORKSHOP_NOWAIT=1 ./scripts/00-setup-kiro.sh
+> ```
+
+> 🔑 **¿Quieres usar tu propia cuenta de Kiro?** El sandbox trae una API key del
+> evento para que `kiro-cli` funcione sin login. Para entrar con tus credenciales,
+> quita esa variable (con `source`, no `./`) y usa el device-flow:
+> ```bash
+> source ./scripts/usar-mis-credenciales.sh
+> kiro-cli login --use-device-flow
 > ```
 
 ---
@@ -225,10 +234,57 @@ implementan → `reviewer` audita. Cambias de "sombrero" con `/agent swap <name>
 > `skill://.kiro/skills/**/SKILL.md` (carga on-demand); el `reviewer` no las
 > necesita, así que va sin `resources`.
 
-## Acto 4 — Conocimiento experto bajo demanda (Skills)
+## Acto 4 — El orquestador (Sub-agents)
 
 ```bash
-./scripts/04-skills.sh
+./scripts/04-orquestador.sh
+```
+
+**Qué enseña:** **Sub-agents** — un agente que delega tareas enfocadas a otros
+agentes, cada uno en su **contexto aislado**, y corre en **paralelo**.
+
+**Qué crea:** `tech-lead.json` — un líder técnico que reparte el trabajo entre
+`arquitecto`, `backend-dev`, `frontend-dev` y `reviewer`, y consolida resultados.
+
+**Lo que necesita un orquestador:**
+
+```json
+{
+  "tools": ["fs_read", "grep", "glob", "subagent"],
+  "toolsSettings": {
+    "subagent": {
+      "availableAgents": ["arquitecto", "backend-dev", "frontend-dev", "reviewer"],
+      "trustedAgents": ["arquitecto", "backend-dev", "frontend-dev", "reviewer"]
+    }
+  }
+}
+```
+
+- La tool **`subagent`** (o `@builtin`) es obligatoria — sin ella el agente no puede delegar.
+- `availableAgents`: a quién **puede** invocar (patrones glob). `trustedAgents`: cuáles corren **sin pedir confirmación**.
+
+**Qué comparten y qué aíslan los sub-agents:**
+
+| Comparten | Aíslan |
+|-----------|--------|
+| Steering, MCP, acceso al workspace, permisos | Historial de conversación y ventana de contexto |
+
+> Cada especialista sigue limitado por **sus propias** tools/permisos: aunque el
+> `tech-lead` le pida al `reviewer` que escriba, el reviewer no tiene `fs_write`.
+
+**Patrones:** paralelo (tareas independientes a la vez), dependencias (DAG
+planificado antes de arrancar) y review loops (p. ej. el `reviewer` devuelve
+trabajo con `NEEDS_CHANGES` hasta N iteraciones). Kiro además trae sub-agentes
+internos (context gathering y general purpose) que usa solo.
+
+**Pruébalo:** `kiro-cli --v3 chat --agent tech-lead`, y pídele *"Diseña y arma el
+MVP del POS: arquitecto propone, backend-dev y frontend-dev implementan en
+paralelo, y reviewer audita."* En CLI, vigila sub-agentes largos con `Ctrl+G`.
+
+## Acto 5 — Conocimiento experto bajo demanda (Skills)
+
+```bash
+./scripts/05-skills.sh
 ```
 
 **Qué enseña:** **Skills** — paquetes de conocimiento en `.kiro/skills/` que Kiro
@@ -269,10 +325,10 @@ description: Modela los datos del POS en DynamoDB... Úsala al diseñar el esque
 (activa `dynamodb-pos`) o *"Quiero publicar el POS en internet"* (activa
 `deploy-amplify`). También puedes escribir `/` y elegir la skill por su nombre.
 
-## Acto 5 — Automatización del equipo (Hooks)
+## Acto 6 — Automatización del equipo (Hooks)
 
 ```bash
-./scripts/05-hooks.sh
+./scripts/06-hooks.sh
 ```
 
 **Qué enseña:** **Hooks** — comandos (o prompts) que Kiro ejecuta
@@ -323,10 +379,10 @@ description: Modela los datos del POS en DynamoDB... Úsala al diseñar el esque
 **Pruébalo:** en `kiro-cli --v3 chat`, pide a `backend-dev` crear un archivo (dispara
 el QA al escribir) o ejecutar `rm -rf /` (el guardia lo bloquea antes de correr).
 
-## Acto 6 — Herramientas externas (MCP)
+## Acto 7 — Herramientas externas (MCP)
 
 ```bash
-./scripts/06-mcp.sh
+./scripts/07-mcp.sh
 ```
 
 **Qué enseña:** **MCP (Model Context Protocol)** — conecta Kiro a servidores
@@ -368,10 +424,10 @@ que abre el diagrama.
 > `autoApprove` solo para herramientas seguras: `create_diagram` solo genera
 > diagramas, no toca tu sistema.
 
-## Acto 7 — Seguridad: permisos del equipo
+## Acto 8 — Seguridad: permisos del equipo
 
 ```bash
-./scripts/07-permisos.sh
+./scripts/08-permisos.sh
 ```
 
 **Qué enseña:** el modelo de **permisos** de Kiro — control **declarativo y por
@@ -437,10 +493,10 @@ Se combinan para armar el perfil de la sesión sin escribir cada regla.
 git/npm/aws) y luego pídele `rm -rf /` — lo tiene denegado por sus permisos. En
 vivo: `/tools` y `/tools trust-all`. En headless/CI, cada `ask` equivale a `deny`.
 
-## Acto 8 — Empaquetar y compartir el equipo (Powers)
+## Acto 9 — Empaquetar y compartir el equipo (Powers)
 
 ```bash
-./scripts/08-powers.sh
+./scripts/09-powers.sh
 ```
 
 **Qué enseña:** **Powers** — bundles instalables que empaquetan
@@ -491,7 +547,7 @@ keywords: ["pos", "ventas", "inventario", "dynamodb"]
 /powers uninstall <nombre>
 ```
 
-## Acto 9 — De la idea al plan (Specs) · 🔴 en vivo
+## Acto 10 — De la idea al plan (Specs) · 🔴 en vivo
 
 > Este acto **no tiene script**: se hace en directo. Specs es el flujo
 > estructurado de Kiro — **requisitos → diseño → tareas** con tu feedback en cada

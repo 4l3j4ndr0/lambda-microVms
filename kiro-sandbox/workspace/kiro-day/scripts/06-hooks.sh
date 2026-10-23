@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ACTO 5 — "Automatización del equipo" (Hooks)
+# ACTO 6 — "Automatización del equipo" (Hooks)
 # =============================================================================
 # Historia: el equipo ya construye el POS. Pero queremos que ciertas cosas
 # pasen SOLAS, sin pedirlas: que se corran los tests cada vez que un dev escribe
@@ -19,7 +19,7 @@
 
 source "$(dirname "$0")/lib/common.sh"
 
-title "ACTO 5 — Automatización del equipo (Hooks)"
+title "ACTO 6 — Automatización del equipo (Hooks)"
 
 story "Dónde vamos" \
   "Dos automatizaciones que todo equipo quiere:" \
@@ -139,9 +139,9 @@ explain "Cómo probarlos" \
 warn "Ojo: PreToolUse es fail-closed. Si tu guardia tiene un bug y no corre," \
      "    bloqueará TODOS los execute_bash. Pruébalo antes de confiar en él."
 
-title "Acto 5 completado ✅"
+title "Acto 6 completado ✅"
 explain "Ya automatizamos QA y seguridad. Hasta aquí Kiro trabaja con archivos y" \
   "shell. El siguiente salto: conectarlo a herramientas y datos EXTERNOS" \
   "(documentación de AWS, bases de datos, etc.) vía MCP." \
   "" \
-  "➡  Siguiente: ./scripts/06-mcp.sh (herramientas externas con MCP)"
+  "➡  Siguiente: ./scripts/07-mcp.sh (herramientas externas con MCP)"

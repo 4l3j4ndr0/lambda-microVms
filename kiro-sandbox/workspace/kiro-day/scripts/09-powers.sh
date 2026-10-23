@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ACTO 7 — "Empaquetar y compartir el equipo" (Powers)
+# ACTO 9 — "Empaquetar y compartir el equipo" (Powers)
 # =============================================================================
 # Historia: montamos a mano reglas (steering), especialistas (agents), manuales
 # (skills), automatización (hooks) y una herramienta externa (MCP de draw.io).
@@ -18,7 +18,7 @@
 
 source "$(dirname "$0")/lib/common.sh"
 
-title "ACTO 7 — Empaquetar y compartir el equipo (Powers)"
+title "ACTO 9 — Empaquetar y compartir el equipo (Powers)"
 
 story "Dónde vamos" \
   "Nuestro equipo POS vive suelto en .kiro/ (steering, agents, skills…)." \
@@ -143,9 +143,14 @@ explain "Powers de terceros (catálogo oficial)" \
   "Strands SDK, Postman… Instalas uno y tu agente gana ese dominio al instante," \
   "sin configurar MCP ni steering a mano."
 
-title "Acto 8 completado ✅"
-explain "Ya sabemos empaquetar y compartir capacidades. Cierre del taller: usar" \
-  "todo el equipo para convertir la IDEA del POS en un PLAN ejecutable y" \
-  "controlado, paso a paso. Eso son los Specs." \
+title "Acto 9 completado ✅"
+explain "¡Y con esto cierra el recorrido scripteado del taller!" \
+  "Ya tienes el equipo completo: reglas (steering), especialistas (agents)," \
+  "un orquestador (sub-agents), conocimiento (skills), automatización (hooks)," \
+  "herramientas externas (MCP), seguridad (permisos) y empaquetado (powers)." \
   "" \
-  "➡  Siguiente: ./scripts/09-specs.sh (de la idea al plan)"
+  "➡  Último paso — EN VIVO (sin script): los Specs." \
+  "   Pon a trabajar todo lo anterior para convertir la idea del POS en un" \
+  "   plan ejecutable: requisitos → diseño → tareas. Lo hacemos juntos en el" \
+  "   taller. Arranca con:  kiro-cli --v3 chat --agent tech-lead" \
+  "   y pídele un spec del MVP del POS."

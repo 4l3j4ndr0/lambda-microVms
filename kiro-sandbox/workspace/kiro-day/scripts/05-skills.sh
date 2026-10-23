@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ACTO 4 — "Conocimiento experto bajo demanda" (Skills)
+# ACTO 5 — "Conocimiento experto bajo demanda" (Skills)
 # =============================================================================
 # Historia: el equipo (Actos 2-3) sabe construir, pero hay conocimiento de
 # dominio muy puntual que no queremos cargar en TODAS las conversaciones: cómo
@@ -15,7 +15,7 @@
 
 source "$(dirname "$0")/lib/common.sh"
 
-title "ACTO 4 — Conocimiento experto bajo demanda (Skills)"
+title "ACTO 5 — Conocimiento experto bajo demanda (Skills)"
 
 story "Dónde vamos" \
   "Dos problemas concretos del POS necesitan conocimiento especializado:" \
@@ -147,9 +147,9 @@ explain "Cómo se activan" \
   "Manual: escribe '/' en el chat y elige la skill por su nombre." \
   "Kiro solo pagó el costo de name+description hasta que la necesitaste."
 
-title "Acto 4 completado ✅"
+title "Acto 5 completado ✅"
 explain "El equipo ya tiene reglas, especialistas y manuales expertos. Ahora" \
   "automaticemos el proceso: que ciertas acciones se disparen solas (tests," \
   "validaciones) sin pedírselo. Eso son los Hooks." \
   "" \
-  "➡  Siguiente: ./scripts/05-hooks.sh (automatización por eventos)"
+  "➡  Siguiente: ./scripts/06-hooks.sh (automatización por eventos)"

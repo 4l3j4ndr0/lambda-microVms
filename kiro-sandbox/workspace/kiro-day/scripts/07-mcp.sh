@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ACTO 6 — "Herramientas externas" (MCP)
+# ACTO 7 — "Herramientas externas" (MCP)
 # =============================================================================
 # Historia: hasta ahora el equipo trabaja con archivos y shell. Pero el
 # arquitecto, cuando explica la arquitectura del POS, lo hace en TEXTO. Sería
@@ -20,7 +20,7 @@
 
 source "$(dirname "$0")/lib/common.sh"
 
-title "ACTO 6 — Herramientas externas: dibujar diagramas con MCP (draw.io)"
+title "ACTO 7 — Herramientas externas: dibujar diagramas con MCP (draw.io)"
 
 story "Dónde vamos" \
   "El arquitecto explica la arquitectura del POS en texto. Queremos que la" \
@@ -92,9 +92,9 @@ explain "Cómo usarlo en el chat" \
 warn "autoApprove solo para herramientas seguras. create_diagram solo genera" \
      "    diagramas (no toca tu sistema), por eso es seguro auto-aprobarlo."
 
-title "Acto 6 completado ✅"
+title "Acto 7 completado ✅"
 explain "El equipo ya tiene reglas, especialistas, conocimiento, automatización y" \
   "herramientas externas. Pero con tanto poder (escribir, ejecutar, red)… hay" \
   "que definir QUÉ puede y QUÉ NO puede hacer. Hablemos de seguridad y permisos." \
   "" \
-  "➡  Siguiente: ./scripts/07-permisos.sh (seguridad: permisos del equipo)"
+  "➡  Siguiente: ./scripts/08-permisos.sh (seguridad: permisos del equipo)"
