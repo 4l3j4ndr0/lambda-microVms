@@ -67,7 +67,7 @@ cat > "$TL" <<'JSON'
   "name": "tech-lead",
   "description": "Líder técnico del POS: planifica y REPARTE el trabajo entre los especialistas (arquitecto, backend-dev, frontend-dev, reviewer), en paralelo, y consolida los resultados.",
   "prompt": "Eres el líder técnico del proyecto POS. No implementas tú: tu trabajo es ENTENDER la tarea, dividirla en subtareas y DELEGARLA en los agentes especialistas usando sub-agents. Corre en paralelo lo que sea independiente (p. ej. backend y frontend a la vez) y espera dependencias cuando las haya. Cuando los especialistas terminen, consolidas y resumes en español. Elige al agente por su rol: arquitecto (diseño), backend-dev (API/FastAPI), frontend-dev (React), reviewer (auditoría de solo lectura).",
-  "tools": ["fs_read", "grep", "glob", "subagent"],
+  "tools": ["fs_read", "grep", "glob", "subagent", "@drawio"],
   "allowedTools": ["fs_read", "grep", "glob"],
   "toolsSettings": {
     "subagent": {
